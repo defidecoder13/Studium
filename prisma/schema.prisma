@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters", "postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+// ==========================================
+// 1. BETTER-AUTH CORE AUTHENTICATION TABLES
+// ==========================================
+
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      Session[]
+  accounts      Account[]
+  settings      UserSettings?
+  documents     Document[]
+  bookmarks     Bookmark[]
+  quizAttempts  QuizAttempt[]
+  notes         DocumentNote[]
+  chats         ChatThread[]
+  studySessions StudySession[]
+  flashcardDecks FlashcardDeck[]
+  flashcards    Flashcard[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@map("verification")
+}
+
+// ==========================================
+// 2. STUDIUM CORE APPLICATION & AI TABLES
+// ==========================================
+
+model UserSettings {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName            String?
+  institution         String?
+  major               String?
+  bio                 String?
+  twoFactor           Boolean  @default(true)
+  notifyQuizReminders Boolean  @default(true)
+  notifyDailySummary  Boolean  @default(true)
+  notifyIndexingDone  Boolean  @default(true)
+  themePreference     String   @default("dark")
+  defaultSummaryMode  String   @default("quick")
+  citationStrictness  String   @default("exact")
+  updatedAt           DateTime @updatedAt
+}
+
+model Document {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  fileUrl     String?
+  fileType    String       @default("PDF")
+  totalPages  Int          @default(1)
+  folder      String       @default("General")
+  fileSize    String       @default("0 MB")
+  isFavorite  Boolean      @default(false)
+  uploadedAt  DateTime     @default(now())
+
+  pages       PageChunk[]
+  bookmarks   Bookmark[]
+  quizAttempts QuizAttempt[]
+  notes       DocumentNote[]
+  chats       ChatThread[]
+  studySessions StudySession[]
+  flashcardDecks FlashcardDeck[]
+
+  @@index([userId, folder])
+}
+
+model PageChunk {
+  id          String   @id @default(cuid())
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  pageNumber  Int
+  textContent String   @db.Text
+  wordCount   Int      @default(0)
+  embedding   Unsupported("vector(768)")?
+
+  @@unique([documentId, pageNumber])
+  @@index([documentId])
+}
+
+model Bookmark {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentTitle String
+  pageNumber    Int
+  snippet       String   @db.Text
+  note          String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  @@index([userId, documentId])
+}
+
+model QuizAttempt {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId       String
+  document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentTitle    String
+  score            Int
+  totalQuestions   Int
+  accuracy         Int
+  difficulty       String   @default("Medium")
+  quizType         String   @default("MCQ")
+  weakTopics       Json?
+  timeTakenSeconds Int      @default(0)
+  completedAt      DateTime @default(now())
+
+  @@index([userId, documentId])
+}
+
+model DocumentNote {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content    String   @db.Text
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, documentId])
+}
+
+model ChatThread {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId   String
+  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  messagesJson Json
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, documentId])
+}
+
+model StudySession {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId      String
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentTitle   String
+  durationSeconds Int
+  completedAt     DateTime @default(now())
+
+  @@index([userId, documentId])
+}
+
+model FlashcardDeck {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId  String
+  document    Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  name        String      
+  createdAt   DateTime    @default(now())
+
+  cards       Flashcard[]
+
+  @@index([userId, documentId])
+}
+
+model Flashcard {
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deckId          String
+  deck            FlashcardDeck  @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  front           String         @db.Text
+  back            String         @db.Text
+  pageRef         Int?
+
+  // Spaced Repetition Engine (SM-2 Algorithm)
+  nextReviewDate  DateTime       @default(now())
+  interval        Int            @default(0)   // days until next review
+  easeFactor      Float          @default(2.5) // difficulty multiplier
+  repetitionCount Int            @default(0)
+
+  createdAt       DateTime       @default(now())
+
+  @@index([deckId, nextReviewDate])
+}
