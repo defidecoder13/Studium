@@ -245,29 +245,6 @@ export function DocumentReader({
     return () => clearTimeout(timer)
   }, [chatMessages, document.id])
 
-  // Track active study session reading duration
-  useEffect(() => {
-    let elapsed = 0
-    const interval = setInterval(() => {
-      elapsed += 1
-    }, 1000)
-
-    return () => {
-      clearInterval(interval)
-      if (elapsed >= 5) {
-        fetch('/api/analytics/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            documentId: document.id,
-            documentTitle: document.title,
-            durationSeconds: elapsed,
-          }),
-          keepalive: true,
-        }).catch((e) => console.warn('Session log error:', e))
-      }
-    }
-  }, [document.id, document.title])
 
   // Timer for quiz when active
   useEffect(() => {

@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   BookOpen,
   BookmarkIcon,
-  BarChart3,
   Settings,
   LogOut,
   ChevronLeft,
@@ -46,11 +45,6 @@ const navItems = [
     label: 'Quizzes',
     href: '/app/quizzes',
     icon: HelpCircle,
-  },
-  {
-    label: 'Analytics',
-    href: '/app/analytics',
-    icon: BarChart3,
   },
   {
     label: 'Settings',

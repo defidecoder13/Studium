@@ -29,7 +29,6 @@ model User {
   quizAttempts  QuizAttempt[]
   notes         DocumentNote[]
   chats         ChatThread[]
-  studySessions StudySession[]
   flashcardDecks FlashcardDeck[]
   flashcards    Flashcard[]
 
@@ -120,7 +119,6 @@ model Document {
   quizAttempts QuizAttempt[]
   notes       DocumentNote[]
   chats       ChatThread[]
-  studySessions StudySession[]
   flashcardDecks FlashcardDeck[]
 
   @@index([userId, folder])
@@ -195,19 +193,6 @@ model ChatThread {
   updatedAt    DateTime @updatedAt
 
   @@unique([userId, documentId])
-}
-
-model StudySession {
-  id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  documentId      String
-  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  documentTitle   String
-  durationSeconds Int
-  completedAt     DateTime @default(now())
-
-  @@index([userId, documentId])
 }
 
 model FlashcardDeck {

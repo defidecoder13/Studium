@@ -125,11 +125,6 @@ export default function QuizzesPage() {
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
-          <Link href="/app/analytics">
-            <Button variant="outline" className="h-10 px-4 rounded-xl text-xs font-bold border-border shadow-sm">
-              View Topic Analytics
-            </Button>
-          </Link>
           <Link href="/app/library">
             <Button className="h-10 px-5 rounded-xl bg-primary text-primary-foreground font-bold shadow-sm hover:opacity-90 transition flex items-center gap-2 text-xs">
               <Sparkles className="w-4 h-4" />
