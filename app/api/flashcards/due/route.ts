@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { auth } from '@/lib/auth'
+import { getCurrentUserId } from '@/lib/auth'
+import { getErrorMessage } from '@/lib/utils'
 import { headers } from 'next/headers'
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers()
-    }).catch(() => null)
-    
-    const userId = session?.user?.id || 'user-dummy-001'
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const deckId = req.nextUrl.searchParams.get('deckId')
 
     // Get flashcards that are due today or earlier
@@ -35,8 +33,8 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ success: true, cards: dueCards })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching due flashcards:', error)
-    return NextResponse.json({ error: error.message || 'Failed to fetch flashcards' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to fetch flashcards') }, { status: 500 })
   }
 }

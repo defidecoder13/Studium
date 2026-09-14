@@ -3,7 +3,11 @@ import path from 'path'
 import fs from 'fs'
 import { r2Client, R2_BUCKET_NAME } from '@/lib/r2'
 import { USE_CLOUD_STORAGE } from '@/lib/storage-adapter'
+import { getErrorMessage } from '@/lib/utils'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
+import prisma from '@/lib/db'
+import { getCurrentUserId } from '@/lib/auth'
+import { headers } from 'next/headers'
 
 export async function GET(
   req: NextRequest,
@@ -14,6 +18,20 @@ export async function GET(
     
     if (!key) {
       return new NextResponse('Missing file key', { status: 400 })
+    }
+
+    // The user must be signed in AND own a document referencing this file,
+    // otherwise the endpoint would be an unauthenticated file dump.
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) {
+      return new NextResponse('Unauthorized', { status: 401 })
+    }
+    const ownedDoc = await prisma.document.findFirst({
+      where: { userId, fileUrl: { contains: `/api/documents/file/${key}` } },
+      select: { id: true },
+    })
+    if (!ownedDoc) {
+      return new NextResponse('Forbidden', { status: 403 })
     }
 
     if (USE_CLOUD_STORAGE) {
@@ -54,8 +72,8 @@ export async function GET(
         },
       })
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error serving file:', error)
-    return new NextResponse('Internal Server Error', { status: 500 })
+    return new NextResponse(getErrorMessage(error, 'Internal Server Error'), { status: 500 })
   }
 }

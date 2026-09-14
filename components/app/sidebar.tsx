@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
-  Brain,
   LayoutDashboard,
   BookOpen,
   BookmarkIcon,
@@ -14,11 +13,12 @@ import {
   ChevronLeft,
   ChevronRight,
   HelpCircle,
-  User,
   CheckCircle2,
+  CalendarClock,
 } from 'lucide-react'
+import { StudiumLogo } from '@/components/ui/logo'
 import { Button } from '@/components/ui/button'
-import { authClient } from '@/lib/auth-client'
+import { useClerk } from '@clerk/nextjs'
 
 const navItems = [
   {
@@ -47,6 +47,11 @@ const navItems = [
     icon: HelpCircle,
   },
   {
+    label: 'Study Planner',
+    href: '/app/study-planner',
+    icon: CalendarClock,
+  },
+  {
     label: 'Settings',
     href: '/app/settings',
     icon: Settings,
@@ -72,8 +77,9 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
   }, [])
 
   const router = useRouter()
+  const { signOut } = useClerk()
   const handleLogout = async () => {
-    await authClient.signOut()
+    await signOut()
     router.push('/')
     router.refresh()
   }
@@ -81,7 +87,7 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
   return (
     <aside
       className={cn(
-        'relative flex flex-col h-full bg-card border-r border-border transition-all duration-300 ease-in-out z-30 select-none shrink-0',
+        'relative flex flex-col h-full bg-sidebar border-r border-sidebar-border transition-all duration-300 ease-in-out z-30 select-none shrink-0',
         isCollapsed ? 'w-20' : 'w-64'
       )}
     >
@@ -97,13 +103,13 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
       {/* Header / Brand */}
       <div className={cn('h-16 border-b border-border flex items-center px-4 transition-all', isCollapsed ? 'justify-center' : 'justify-start gap-3 px-6')}>
         <Link href="/app/dashboard" className="flex items-center gap-3 group">
-          <div className="w-9 h-9 rounded-xl bg-foreground text-background flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105">
-            <Brain className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-xl bg-black dark:bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105">
+            <StudiumLogo size={20} className="text-white" />
           </div>
           {!isCollapsed && (
             <div className="flex flex-col min-w-0 animate-in fade-in duration-200">
               <span className="text-base font-heading font-bold text-foreground tracking-tight leading-none">Studium</span>
-              <span className="text-[10px] font-mono text-muted-foreground pt-1">Education Platform</span>
+              <span className="text-[10px] font-mono text-muted-foreground pt-1">Precision Learning</span>
             </div>
           )}
         </Link>
@@ -119,7 +125,7 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
 
         {navItems.map((item) => {
           const Icon = item.icon
-          const isActive = pathname.startsWith(item.href) || (item.href === '/app/library' && pathname.startsWith('/app/documents'))
+          const isActive = pathname.startsWith(item.href) || (item.href === '/app/library' && (pathname.startsWith('/app/documents') || pathname.startsWith('/app/reader')))
 
           return (
             <Link
@@ -129,14 +135,17 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
               className={cn(
                 'flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group relative',
                 isActive
-                  ? 'bg-foreground text-background font-semibold shadow-sm'
-                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                  ? 'bg-primary/10 text-primary font-semibold'
+                  : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground'
               )}
             >
+              {isActive && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-full bg-primary" />
+              )}
               <Icon
                 className={cn(
                   'w-5 h-5 shrink-0 transition-colors',
-                  isActive ? 'text-background' : 'text-muted-foreground group-hover:text-foreground'
+                  isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'
                 )}
               />
               {!isCollapsed && (
@@ -145,7 +154,7 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
 
               {/* Active right dot if collapsed */}
               {isCollapsed && isActive && (
-                <span className="absolute right-2 w-1.5 h-1.5 rounded-full bg-background" />
+                <span className="absolute right-2 w-1.5 h-1.5 rounded-full bg-primary" />
               )}
             </Link>
           )
@@ -162,7 +171,7 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
           )}
           title={isCollapsed ? `${user?.name || 'Alex Rodriguez'} (${user?.email || 'alex@studium.ai'})` : undefined}
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground font-bold text-xs shrink-0 relative">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xs shrink-0 relative">
             {user?.name?.charAt(0).toUpperCase() || 'A'}
             <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-background" />
           </div>

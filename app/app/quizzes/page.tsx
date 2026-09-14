@@ -10,7 +10,6 @@ import {
   ChevronRight,
   Trash2,
   AlertTriangle,
-  CheckCircle2,
   Filter,
   BookOpen,
   Video,
@@ -38,6 +37,13 @@ interface QuizAttempt {
   }
 }
 
+async function fetchQuizHistoryFromApi(): Promise<QuizAttempt[]> {
+  const res = await fetch('/api/quizzes/history')
+  const data = await res.json()
+  if (data.quizzes && Array.isArray(data.quizzes)) return data.quizzes as QuizAttempt[]
+  return []
+}
+
 export default function QuizzesPage() {
   const [quizzes, setQuizzes] = useState<QuizAttempt[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -45,25 +51,21 @@ export default function QuizzesPage() {
   const [difficultyFilter, setDifficultyFilter] = useState<'ALL' | 'Easy' | 'Medium' | 'Hard'>('ALL')
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const fetchHistory = async () => {
-    setIsLoading(true)
-    try {
-      const res = await fetch('/api/quizzes/history')
-      const data = await res.json()
-      if (data.success && data.quizzes) {
-        setQuizzes(data.quizzes)
-      } else if (data.quizzes) {
-        setQuizzes(data.quizzes)
-      }
-    } catch (e) {
-      console.error('Failed to fetch quizzes:', e)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   useEffect(() => {
-    fetchHistory()
+    let cancelled = false
+    fetchQuizHistoryFromApi()
+      .then((fetched) => {
+        if (!cancelled) setQuizzes(fetched)
+      })
+      .catch((e) => {
+        if (!cancelled) console.error('Failed to fetch quizzes:', e)
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
@@ -93,7 +95,6 @@ export default function QuizzesPage() {
   const avgAccuracy = totalAttempts > 0 
     ? Math.round(quizzes.reduce((acc, q) => acc + q.accuracy, 0) / totalAttempts) 
     : 0
-  const totalQuestions = quizzes.reduce((acc, q) => acc + q.totalQuestions, 0)
   
   // Aggregate weak topics
   const allWeakTopics = quizzes
@@ -136,7 +137,7 @@ export default function QuizzesPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex items-center gap-4">
+        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
             <Trophy className="w-6 h-6" />
           </div>
@@ -148,8 +149,8 @@ export default function QuizzesPage() {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0">
+        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
             <BrainCircuit className="w-6 h-6" />
           </div>
           <div>
@@ -158,13 +159,13 @@ export default function QuizzesPage() {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
             <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Identified Weak Topics</div>
-            <div className="text-2xl font-heading font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+            <div className="text-2xl font-heading font-bold text-primary mt-0.5">
               {Object.keys(topicCounts).length} <span className="text-xs font-normal text-muted-foreground font-sans">topics</span>
             </div>
           </div>
@@ -173,14 +174,14 @@ export default function QuizzesPage() {
 
       {/* Weak Topics Quick Callout Banner */}
       {topWeakTopics.length > 0 && (
-        <div className="p-5 rounded-2xl border border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/10 space-y-3">
+        <div className="p-5 rounded-2xl border border-primary/20 bg-primary/[0.04] space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-xs">
+            <div className="flex items-center gap-2 text-primary font-bold text-xs">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span>Recommended Priority Revision: Top Weak Topics</span>
             </div>
             <Link href="/app/flashcards">
-              <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1">
+              <span className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1">
                 Generate Flashcards for Weak Spots &rarr;
               </span>
             </Link>
@@ -189,10 +190,10 @@ export default function QuizzesPage() {
             {topWeakTopics.map(([topic, count]) => (
               <span 
                 key={topic}
-                className="px-3 py-1 rounded-lg bg-background/80 dark:bg-card border border-amber-500/30 text-foreground text-xs font-medium shadow-sm flex items-center gap-1.5"
+                className="px-3 py-1 rounded-lg bg-background/80 dark:bg-card border border-primary/20 text-foreground text-xs font-medium shadow-sm flex items-center gap-1.5"
               >
                 <span>{topic}</span>
-                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[10px] font-mono font-bold">
+                <span className="px-1.5 py-0.5 rounded bg-primary/15 text-primary text-[10px] font-mono font-bold">
                   Missed {count}x
                 </span>
               </span>
@@ -210,7 +211,7 @@ export default function QuizzesPage() {
             placeholder="Search quizzes or topics..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-10 pr-4 rounded-xl bg-card border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 transition placeholder:text-muted-foreground"
+            className="w-full h-10 pl-10 pr-4 rounded-xl bg-card border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 transition placeholder:text-muted-foreground"
           />
         </div>
 
@@ -223,7 +224,7 @@ export default function QuizzesPage() {
             <button
               key={diff}
               onClick={() => setDifficultyFilter(diff)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${difficultyFilter === diff ? 'bg-foreground text-background shadow-sm' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${difficultyFilter === diff ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}
             >
               {diff}
             </button>
@@ -252,11 +253,11 @@ export default function QuizzesPage() {
           <div className="space-y-1 max-w-md">
             <h3 className="text-lg font-heading font-bold text-foreground">No quiz attempts found</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              You haven't completed any quizzes matching this filter yet. Open any document or YouTube video in your Library and click the <strong className="text-foreground">Quiz</strong> tab to test your mastery!
+              You haven&apos;t completed any quizzes matching this filter yet. Open any document or YouTube video in your Library and click the <strong className="text-foreground">Quiz</strong> tab to test your mastery!
             </p>
           </div>
           <Link href="/app/library">
-            <Button className="mt-2 h-10 px-6 rounded-xl bg-foreground text-background font-bold text-xs shadow-sm">
+            <Button className="mt-2 h-10 px-6 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-sm">
               Go To Library
             </Button>
           </Link>
@@ -268,20 +269,21 @@ export default function QuizzesPage() {
             const accuracyColor = quiz.accuracy >= 80 
               ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
               : quiz.accuracy >= 60 
-              ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20' 
-              : 'text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/20'
+              ? 'text-primary bg-primary/10 border-primary/20' 
+              : 'text-destructive bg-destructive/10 border-destructive/20'
+            const accuracyBar = quiz.accuracy >= 80 ? 'bg-emerald-500' : quiz.accuracy >= 60 ? 'bg-primary' : 'bg-destructive'
 
             return (
               <div
                 key={quiz.id}
-                className="p-6 rounded-2xl border border-border bg-card hover:border-foreground/20 transition-all shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 group"
+                className="p-6 rounded-2xl border border-border bg-card hover:border-primary/40 hover:shadow-lg transition-all duration-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 group"
               >
                 <div className="space-y-3 flex-1">
                   
                   {/* Top Metadata row */}
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="px-2.5 py-0.5 rounded-md bg-muted text-muted-foreground text-[10px] font-mono font-bold flex items-center gap-1.5">
-                      {isVideo ? <Video className="w-3 h-3 text-red-500" /> : <BookOpen className="w-3 h-3 text-blue-500" />}
+                      {isVideo ? <Video className="w-3 h-3 text-destructive" /> : <BookOpen className="w-3 h-3 text-primary" />}
                       <span>{quiz.documentTitle}</span>
                     </span>
 
@@ -319,17 +321,25 @@ export default function QuizzesPage() {
                     </span>
                   </div>
 
+                  {/* Accuracy progress bar */}
+                  <div className="w-full bg-muted h-1 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${accuracyBar}`}
+                      style={{ width: `${Math.min(100, quiz.accuracy)}%` }}
+                    />
+                  </div>
+
                   {/* Weak topics list */}
                   {Array.isArray(quiz.weakTopics) && quiz.weakTopics.length > 0 && (
                     <div className="pt-2 border-t border-border/60 flex flex-wrap items-center gap-2">
                       <span className="text-[11px] font-mono font-bold text-muted-foreground flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3 text-amber-500" />
+                        <AlertTriangle className="w-3 h-3 text-primary" />
                         <span>Missed Concepts:</span>
                       </span>
                       {quiz.weakTopics.map((topic, i) => (
                         <span
                           key={i}
-                          className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[11px] font-medium border border-amber-500/20"
+                          className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[11px] font-medium border border-primary/20"
                         >
                           {topic}
                         </span>
@@ -352,7 +362,7 @@ export default function QuizzesPage() {
 
                   {quiz.documentId && (
                     <Link href={`/app/reader/${quiz.documentId}`}>
-                      <Button size="sm" className="h-9 px-4 rounded-xl text-xs font-bold bg-foreground text-background hover:bg-primary hover:text-primary-foreground transition flex items-center gap-1.5">
+                      <Button size="sm" className="h-9 px-4 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition flex items-center gap-1.5">
                         <span>Review Document</span>
                         <ChevronRight className="w-3.5 h-3.5" />
                       </Button>

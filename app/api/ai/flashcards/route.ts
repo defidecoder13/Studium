@@ -2,16 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getGeminiClient, GEMINI_MODEL } from '@/lib/ai'
 import { getStoredDocumentById } from '@/lib/documents-store'
 import prisma from '@/lib/db'
-import { auth } from '@/lib/auth'
+import { getCurrentUserId } from '@/lib/auth'
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
+import { getErrorMessage } from '@/lib/utils'
 import { headers } from 'next/headers'
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers()
-    }).catch(() => null)
-    
-    const userId = session?.user?.id || 'user-dummy-001'
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { allowed, retryAfterSec } = checkRateLimit(`ai:${userId}`, 20, 60_000)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
 
     const body = await req.json()
     const { documentId, currentPage = 1, documentTitle = 'Academic Textbook', count = 5, fileType } = body
@@ -21,11 +22,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'documentId is required' }, { status: 400 })
     }
 
-    const storedDoc = await getStoredDocumentById(documentId)
+    const storedDoc = await getStoredDocumentById(documentId, userId)
     
     let contextText = ''
     if (storedDoc && storedDoc.pages && storedDoc.pages.length > 0) {
-      const page = storedDoc.pages.find((p: any) => p.pageNumber === currentPage) || storedDoc.pages[0]
+      const page = storedDoc.pages.find((p) => p.pageNumber === currentPage) || storedDoc.pages[0]
       contextText = isVideo
         ? `--- [Video Segment ${(page.pageNumber - 1) * 3}:00 to ${page.pageNumber * 3}:00] ---\n${page.text}`
         : `--- [Page ${page.pageNumber}] ---\n${page.text}`
@@ -75,7 +76,7 @@ Each object in the array must strictly follow this exact interface:
     })
 
     const rawText = response.text || '[]'
-    let cards = []
+    let cards: Array<{ front: string; back: string }> = []
     try {
       const startIdx = rawText.indexOf('[')
       const endIdx = rawText.lastIndexOf(']')
@@ -85,7 +86,7 @@ Each object in the array must strictly follow this exact interface:
       } else {
         cards = JSON.parse(rawText)
       }
-    } catch (e) {
+    } catch {
       console.error('Failed to parse AI response:', rawText)
       return NextResponse.json({ error: 'AI returned invalid formatting. Please try again.' }, { status: 500 })
     }
@@ -106,7 +107,7 @@ Each object in the array must strictly follow this exact interface:
     }
 
     const savedCards = await prisma.$transaction(
-      cards.map((c: any) => 
+      cards.map((c) => 
         prisma.flashcard.create({
           data: {
             userId,
@@ -124,8 +125,8 @@ Each object in the array must strictly follow this exact interface:
     )
 
     return NextResponse.json({ success: true, count: savedCards.length, deckId: deck.id })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error generating flashcards:', error)
-    return NextResponse.json({ error: error.message || 'Failed to generate flashcards' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to generate flashcards') }, { status: 500 })
   }
 }

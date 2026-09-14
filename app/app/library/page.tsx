@@ -4,30 +4,21 @@ import { useState, useEffect } from 'react'
 import {
   Search,
   Filter,
-  Grid,
-  List as ListIcon,
   Upload,
   Folder,
   FileText,
-  Clock,
-  Calendar,
-  MoreVertical,
   Star,
-  Share2,
-  Edit2,
   Trash2,
   BookOpen,
-  Plus,
   ArrowUpDown,
-  Check,
   Sparkles,
-  Layers,
   X,
   Video,
   Link as LinkIcon
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, getErrorMessage } from '@/lib/utils'
+import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { DocumentData } from '@/components/reader/document-reader'
 
@@ -56,32 +47,37 @@ interface GlobalSearchResult {
   sourceType: string
 }
 
+interface ApiDocumentSummary {
+  id: string
+  title: string
+  fileType?: string
+  totalPages?: number
+  uploadedAt?: string
+  folder?: string
+  fileUrl?: string
+  fileSize?: string
+}
+
 export default function LibraryPage() {
+  const searchParams = useSearchParams()
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFolder, setActiveFolder] = useState<string>('All Documents')
   const [sortBy, setSortBy] = useState<'opened' | 'name' | 'date'>('opened')
   const [filterType, setFilterType] = useState<'all' | 'favorites' | 'pdf'>('all')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   
   const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([])
   const [isSearchingGlobal, setIsSearchingGlobal] = useState(false)
 
   useEffect(() => {
-    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
-      setGlobalSearchResults([])
-      setIsSearchingGlobal(false)
-      return
-    }
-    setIsSearchingGlobal(true)
+    const q = searchQuery.trim()
+    if (q.length < 2) return
+
     const timer = setTimeout(() => {
-      fetch(`/api/search?q=${encodeURIComponent(searchQuery.trim())}`)
+      setIsSearchingGlobal(true)
+      fetch(`/api/search?q=${encodeURIComponent(q)}`)
         .then((res) => res.json())
         .then((data) => {
-          if (data.results && Array.isArray(data.results)) {
-            setGlobalSearchResults(data.results)
-          } else {
-            setGlobalSearchResults([])
-          }
+          setGlobalSearchResults(data.results && Array.isArray(data.results) ? data.results : [])
         })
         .catch((e) => console.warn('Search API error:', e))
         .finally(() => setIsSearchingGlobal(false))
@@ -92,13 +88,20 @@ export default function LibraryPage() {
   // Document Reader Overlay State
   const [activeReaderDoc, setActiveReaderDoc] = useState<LibraryDocument | null>(null)
   
-  // Drag & Drop Upload Modal State
-  const [showUploadModal, setShowUploadModal] = useState(false)
+  // Drag & Drop Upload Modal State (auto-opens via ?upload=1 from the dashboard quick action)
+  const [showUploadModal, setShowUploadModal] = useState(() => searchParams.get('upload') === '1')
   const [showYoutubeModal, setShowYoutubeModal] = useState(false)
   const [youtubeUrl, setYoutubeUrl] = useState('')
   const [isImportingYoutube, setIsImportingYoutube] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [uploadingFile, setUploadingFile] = useState<string | null>(null)
+
+  // Drop the ?upload=1 param from the URL once the modal has been opened by it
+  useEffect(() => {
+    if (searchParams.get('upload') === '1') {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [searchParams])
 
   // Documents State
   const [documents, setDocuments] = useState<LibraryDocument[]>([])
@@ -111,12 +114,11 @@ export default function LibraryPage() {
   ]
 
   useEffect(() => {
-    setIsLoadingDocs(true)
     fetch('/api/documents')
       .then((res) => res.json())
       .then((data) => {
         if (data.documents && Array.isArray(data.documents)) {
-          const apiDocs: LibraryDocument[] = data.documents.map((d: any) => ({
+          const apiDocs: LibraryDocument[] = data.documents.map((d: ApiDocumentSummary) => ({
             id: d.id,
             title: d.title,
             fileType: d.fileType || 'PDF Textbook',
@@ -127,7 +129,7 @@ export default function LibraryPage() {
             folder: d.folder || 'General',
             tags: d.fileType === 'YouTube Video' ? ['YouTube', 'AI Indexed'] : ['Real PDF', 'AI Indexed'],
             isFavorite: false,
-            fileSize: d.fileType === 'YouTube Video' ? 'Video' : '3.4 MB',
+            fileSize: d.fileType === 'YouTube Video' ? 'Video' : (d.fileSize || 'PDF'),
             fileUrl: d.fileUrl,
           }))
           setDocuments((prev) => {
@@ -201,9 +203,9 @@ export default function LibraryPage() {
         setActiveReaderDoc(newDoc)
         return
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('PDF upload error:', err)
-      alert(`Could not upload PDF: ${err.message}. Make sure it is a valid PDF or document file.`)
+      alert(`Could not upload PDF: ${getErrorMessage(err)}. Make sure it is a valid PDF or document file.`)
     } finally {
       setUploadingFile(null)
     }
@@ -247,8 +249,8 @@ export default function LibraryPage() {
         setShowYoutubeModal(false)
         setYoutubeUrl('')
       }
-    } catch (err: any) {
-      alert(err.message || 'Failed to import YouTube video')
+    } catch (err) {
+      alert(getErrorMessage(err, 'Failed to import YouTube video'))
     } finally {
       setIsImportingYoutube(false)
     }
@@ -292,14 +294,14 @@ export default function LibraryPage() {
           <Button
             onClick={() => setShowYoutubeModal(true)}
             variant="outline"
-            className="rounded-xl px-5 h-10 font-semibold gap-2 shadow-sm text-xs sm:text-sm border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-950/30 transition-colors"
+            className="rounded-xl px-5 h-10 font-semibold gap-2 shadow-sm text-xs sm:text-sm border-destructive/30 text-destructive hover:bg-destructive/10 dark:text-red-400 dark:hover:bg-destructive/15 transition-colors"
           >
             <Video className="w-4 h-4" />
             <span className="hidden sm:inline">Import YouTube</span>
           </Button>
           <Button
             onClick={() => setShowUploadModal(true)}
-            className="rounded-xl px-5 h-10 bg-foreground text-background hover:bg-foreground/90 font-semibold gap-2 shadow-sm text-xs sm:text-sm"
+            className="rounded-xl px-5 h-10 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold gap-2 shadow-sm text-xs sm:text-sm"
           >
             <Upload className="w-4 h-4" />
             <span className="hidden sm:inline">Upload Document</span>
@@ -324,16 +326,16 @@ export default function LibraryPage() {
                 className={cn(
                   'flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0',
                   isActive
-                    ? 'bg-foreground text-background shadow-sm'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'bg-card border border-border/80 text-muted-foreground hover:text-foreground hover:bg-muted/50'
                 )}
               >
-                <Folder className={cn('w-3.5 h-3.5', isActive ? 'text-background' : 'text-primary/70')} />
+                <Folder className={cn('w-3.5 h-3.5', isActive ? 'text-primary-foreground' : 'text-primary/70')} />
                 <span>{folderName}</span>
                 <span
                   className={cn(
                     'px-1.5 py-0.5 rounded-full text-[10px] font-mono',
-                    isActive ? 'bg-background/20 text-background' : 'bg-muted text-muted-foreground'
+                    isActive ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'
                   )}
                 >
                   {count}
@@ -354,7 +356,7 @@ export default function LibraryPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search documents by filename or concept tags..."
-            className="w-full bg-background border border-border rounded-xl pl-10 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition"
+            className="w-full bg-background border border-border rounded-xl pl-10 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary transition"
           />
         </div>
 
@@ -365,8 +367,8 @@ export default function LibraryPage() {
             <Filter className="w-3.5 h-3.5 text-muted-foreground" />
             <select
               value={filterType}
-              onChange={(e) => setFilterType(e.target.value as any)}
-              className="bg-transparent font-semibold text-foreground focus:outline-none cursor-pointer"
+              onChange={(e) => setFilterType(e.target.value as 'all' | 'favorites' | 'pdf')}
+              className="bg-transparent font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-primary rounded-lg cursor-pointer"
             >
               <option value="all">Filter: All Types</option>
               <option value="favorites">Favorites ⭐</option>
@@ -379,8 +381,8 @@ export default function LibraryPage() {
             <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground" />
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="bg-transparent font-semibold text-foreground focus:outline-none cursor-pointer"
+              onChange={(e) => setSortBy(e.target.value as 'opened' | 'name' | 'date')}
+              className="bg-transparent font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-primary rounded-lg cursor-pointer"
             >
               <option value="opened">Sort: Last Opened</option>
               <option value="name">Sort: Name (A-Z)</option>
@@ -422,11 +424,11 @@ export default function LibraryPage() {
                       lastOpened: 'Just now',
                       folder: 'General',
                       isFavorite: false,
-                      fileSize: '3.4 MB',
+                      fileSize: 'PDF',
                       tags: ['Search Match'],
-                    } as any)
+                    })
                   }
-                  className="p-4 rounded-2xl border border-border bg-card hover:border-foreground/50 transition cursor-pointer flex flex-col justify-between space-y-3 shadow-sm group"
+                  className="p-4 rounded-2xl border border-border bg-card hover:border-primary/40 hover:shadow-md transition cursor-pointer flex flex-col justify-between space-y-3 shadow-sm group"
                 >
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs font-mono text-muted-foreground">
@@ -441,12 +443,12 @@ export default function LibraryPage() {
                       {res.documentTitle}
                     </div>
                     <p className="text-xs text-muted-foreground italic font-mono line-clamp-3 bg-muted/30 p-2 rounded-lg border border-border/50">
-                      "{res.snippet}"
+                      &quot;{res.snippet}&quot;
                     </p>
                   </div>
 
                   <div className="pt-1 flex items-center justify-end">
-                    <Button size="sm" className="h-7 text-[11px] rounded-lg bg-foreground text-background font-semibold gap-1">
+                    <Button size="sm" className="h-7 text-[11px] rounded-lg bg-primary text-primary-foreground font-semibold gap-1">
                       <span>Jump to Page {res.pageNumber}</span>
                     </Button>
                   </div>
@@ -468,89 +470,100 @@ export default function LibraryPage() {
             <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
             <span className="font-semibold text-foreground">Loading study repository from database...</span>
           </div>
-          <div className="divide-y divide-border animate-pulse">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="py-4 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-muted shrink-0" />
-                  <div className="space-y-1.5">
-                    <div className="w-48 h-4 rounded bg-muted" />
-                    <div className="w-24 h-3 rounded bg-muted/60 sm:hidden" />
-                  </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 animate-pulse">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <div key={i} className="rounded-2xl border border-border bg-background p-4 sm:p-5 space-y-3.5">
+                <div className="flex items-start justify-between">
+                  <div className="w-11 h-11 rounded-xl bg-muted" />
+                  <div className="w-8 h-8 rounded-lg bg-muted/60" />
                 </div>
-                <div className="w-24 h-4 rounded bg-muted hidden sm:block" />
-                <div className="w-16 h-4 rounded bg-muted hidden md:block" />
-                <div className="w-20 h-4 rounded bg-muted hidden lg:block" />
-                <div className="w-16 h-6 rounded bg-muted" />
+                <div className="space-y-2">
+                  <div className="w-3/4 h-4 rounded bg-muted" />
+                  <div className="w-1/2 h-3 rounded bg-muted/60" />
+                </div>
+                <div className="pt-3 border-t border-border/70 flex justify-between">
+                  <div className="w-16 h-3 rounded bg-muted/60" />
+                  <div className="w-8 h-3 rounded bg-muted/60" />
+                </div>
               </div>
             ))}
           </div>
         </div>
       ) : filteredDocs.length > 0 ? (
-          <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-border bg-muted/30 text-muted-foreground font-mono uppercase tracking-wider">
-                  <th className="py-3 px-4">Document Name</th>
-                  <th className="py-3 px-4 hidden sm:table-cell">Folder</th>
-                  <th className="py-3 px-4 hidden md:table-cell">Pages</th>
-                  <th className="py-3 px-4 hidden lg:table-cell">Last Opened</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredDocs.map((doc) => (
-                  <tr
-                    key={doc.id}
-                    onClick={() => setActiveReaderDoc(doc)}
-                    className="hover:bg-muted/40 transition cursor-pointer group"
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+            {filteredDocs.map((doc) => (
+              <div
+                key={doc.id}
+                onClick={() => setActiveReaderDoc(doc)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setActiveReaderDoc(doc)
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                className="group relative rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex flex-col gap-3.5 animate-in fade-in duration-200 outline-none focus-visible:ring-1 focus-visible:ring-primary"
+              >
+                {/* Type icon tile + favorite */}
+                <div className="flex items-start justify-between">
+                  <div
+                    className={cn(
+                      'w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-inner transition-colors',
+                      doc.fileType === 'YouTube Video'
+                        ? 'bg-destructive/10 text-destructive'
+                        : 'bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground'
+                    )}
                   >
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                          <FileText className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <div className="font-heading font-bold text-sm text-foreground group-hover:text-primary transition-colors">
-                            {doc.title}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground font-mono sm:hidden">
-                            {doc.folder} • {doc.totalPages} pages
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 hidden sm:table-cell font-mono text-muted-foreground">
-                      <span className="px-2 py-0.5 rounded bg-muted text-[11px] font-semibold text-foreground">
-                        {doc.folder}
+                    {doc.fileType === 'YouTube Video' ? <Video className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                  </div>
+                  <button
+                    onClick={(e) => handleToggleFavorite(e, doc.id)}
+                    className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-amber-500 transition"
+                    title={doc.isFavorite ? 'Remove favorite' : 'Mark favorite'}
+                  >
+                    <Star className={cn('w-4 h-4', doc.isFavorite ? 'fill-amber-500 text-amber-500' : '')} />
+                  </button>
+                </div>
+
+                {/* Title + meta + tags */}
+                <div className="space-y-1.5 flex-1 min-w-0">
+                  <h3 className="font-heading font-bold text-sm text-foreground group-hover:text-primary transition-colors line-clamp-2">
+                    {doc.title}
+                  </h3>
+                  <p className="text-[11px] font-mono text-muted-foreground truncate">
+                    {doc.folder} • {doc.totalPages} pages • {doc.lastOpened}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {doc.tags?.map((tag) => (
+                      <span
+                        key={tag}
+                        className="px-2 py-0.5 rounded-full bg-muted/60 text-[10px] font-mono font-semibold text-muted-foreground"
+                      >
+                        {tag}
                       </span>
-                    </td>
-                    <td className="py-3.5 px-4 hidden md:table-cell font-mono font-bold text-foreground">
-                      {doc.totalPages} P.
-                    </td>
-                    <td className="py-3.5 px-4 hidden lg:table-cell font-mono text-muted-foreground">
-                      {doc.lastOpened}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={(e) => handleToggleFavorite(e, doc.id)}
-                          className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-amber-400 transition"
-                        >
-                          <Star className={cn('w-4 h-4', doc.isFavorite ? 'fill-amber-400 text-amber-400' : '')} />
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteDoc(e, doc.id)}
-                          className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Footer: size + open hint + delete */}
+                <div className="pt-3 border-t border-border/70 flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-muted-foreground">{doc.fileSize}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                      Open Reader <BookOpen className="w-3 h-3" />
+                    </span>
+                    <button
+                      onClick={(e) => handleDeleteDoc(e, doc.id)}
+                      className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition"
+                      title="Delete document"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
       ) : (
         /* BEAUTIFUL EMPTY STATE WHEN NO DOCUMENTS MATCH / EXIST */
@@ -564,7 +577,7 @@ export default function LibraryPage() {
               <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
                 {searchQuery || filterType !== 'all' || activeFolder !== 'All Documents'
                   ? "We couldn't find any study materials matching your current filter criteria. Try clearing filters or uploading a new syllabus."
-                  : 'Your study repository is currently empty. Upload your first PDF textbook, lecture recording, or Word document to get started!'}
+                  : 'Your study repository is currently empty. Upload your first PDF textbook or import a YouTube lecture to get started!'}
               </p>
             </div>
 
@@ -584,7 +597,7 @@ export default function LibraryPage() {
               )}
               <Button
                 onClick={() => setShowUploadModal(true)}
-                className="rounded-xl px-6 bg-foreground text-background hover:bg-foreground/90 font-semibold gap-2 text-xs h-10 shadow-sm"
+                className="rounded-xl px-6 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold gap-2 text-xs h-10 shadow-sm"
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>Upload Document</span>
@@ -608,7 +621,7 @@ export default function LibraryPage() {
             <div className="space-y-1">
               <h3 className="font-heading font-bold text-xl text-foreground">Upload Study Materials</h3>
               <p className="text-xs sm:text-sm text-muted-foreground">
-                Supported formats: PDF textbooks, Word DOCX, and lecture transcriptions.
+                Supported format: PDF textbooks and lecture slides. The text is extracted per page and AI-indexed for chat, quizzes, and flashcards.
               </p>
             </div>
 
@@ -627,13 +640,13 @@ export default function LibraryPage() {
               className={cn(
                 'w-full h-56 rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center p-6 text-center cursor-pointer',
                 isDragging
-                  ? 'border-foreground bg-foreground/5 scale-[1.02]'
-                  : 'border-border bg-muted/20 hover:bg-muted/40 hover:border-foreground/40'
+                  ? 'border-primary bg-primary/5 scale-[1.02]'
+                  : 'border-border bg-muted/20 hover:bg-muted/40 hover:border-primary/40'
               )}
               onClick={() => {
                 const input = document.createElement('input')
                 input.type = 'file'
-                input.accept = '.pdf,.docx,.doc,.txt'
+                input.accept = '.pdf,application/pdf'
                 input.onchange = (e) => handleSimulatedUpload((e.target as HTMLInputElement).files)
                 input.click()
               }}
@@ -690,7 +703,7 @@ export default function LibraryPage() {
 
             <div className="space-y-1">
               <h3 className="font-heading font-bold text-xl text-foreground flex items-center gap-2">
-                <Video className="w-5 h-5 text-red-500" /> Import YouTube Video
+                <Video className="w-5 h-5 text-destructive" /> Import YouTube Video
               </h3>
               <p className="text-xs sm:text-sm text-muted-foreground">
                 Paste a link to any educational YouTube video. We will automatically fetch the transcript and index it as a document.
@@ -715,7 +728,7 @@ export default function LibraryPage() {
               <Button
                 onClick={handleImportYoutube}
                 disabled={!youtubeUrl || isImportingYoutube}
-                className="w-full h-12 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold gap-2"
+                className="w-full h-12 rounded-xl bg-destructive hover:bg-destructive/90 text-white font-bold gap-2"
               >
                 {isImportingYoutube ? (
                   <>

@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { auth } from '@/lib/auth'
+import { getCurrentUserId } from '@/lib/auth'
+import { getErrorMessage } from '@/lib/utils'
 import { headers } from 'next/headers'
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers()
-    }).catch(() => null)
-    
-    const userId = session?.user?.id || 'user-dummy-001'
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const decks = await prisma.flashcardDeck.findMany({
       where: { userId },
@@ -56,19 +54,16 @@ export async function GET(req: NextRequest) {
         dueCardsCount
       }
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching flashcard decks:', error)
-    return NextResponse.json({ error: error.message || 'Failed to fetch flashcard decks' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to fetch flashcard decks') }, { status: 500 })
   }
 }
 
 export async function DELETE(req: NextRequest) {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers()
-    }).catch(() => null)
-    
-    const userId = session?.user?.id || 'user-dummy-001'
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const deckId = req.nextUrl.searchParams.get('deckId')
     const cardId = req.nextUrl.searchParams.get('cardId')
 
@@ -91,8 +86,8 @@ export async function DELETE(req: NextRequest) {
     }
 
     return NextResponse.json({ error: 'Provide deckId or cardId' }, { status: 400 })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error deleting flashcard resource:', error)
-    return NextResponse.json({ error: error.message || 'Failed to delete' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to delete') }, { status: 500 })
   }
 }

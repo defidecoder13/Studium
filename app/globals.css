@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+@import '@clerk/ui/themes/shadcn.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -45,131 +46,103 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Crisp minimal — neutral canvas, ink, single indigo accent
+   Anti-slop: muted-foreground 4.5:1, tinted neutrals toward indigo (not warm sand) */
 :root {
   color-scheme: light;
-  --background: #f5f5f5;
-  --foreground: #2a2a2a;
+  --background: #fafafa;
+  --foreground: #18181b;
   --card: #ffffff;
-  --card-foreground: #2a2a2a;
+  --card-foreground: #18181b;
   --popover: #ffffff;
-  --popover-foreground: #2a2a2a;
-  --primary: #4a4a4a;
+  --popover-foreground: #18181b;
+  --primary: #4f46e5;
   --primary-foreground: #ffffff;
-  --secondary: #e8e8e8;
-  --secondary-foreground: #4a4a4a;
-  --muted: #d4d4d4;
-  --muted-foreground: #757575;
-  --accent: #8b8b8b;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #52525b;
+  --accent: #4f46e5;
   --accent-foreground: #ffffff;
   --destructive: #dc2626;
-  --border: #e5e5e5;
-  --input: #f0f0f0;
-  --ring: #4a4a4a;
-  --chart-1: #4a4a4a;
-  --chart-2: #696969;
-  --chart-3: #808080;
-  --chart-4: #999999;
-  --chart-5: #b0b0b0;
-  --radius: 0.75rem;
-  --sidebar: #fafafa;
-  --sidebar-foreground: #2a2a2a;
-  --sidebar-primary: #4a4a4a;
+  --border: #e4e4e7;
+  --input: #ffffff;
+  --ring: #4f46e5;
+  --chart-1: #4f46e5;
+  --chart-2: #6366f1;
+  --chart-3: #818cf8;
+  --chart-4: #a5b4fc;
+  --chart-5: #312e81;
+  --radius: 0.625rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #18181b;
+  --sidebar-primary: #4f46e5;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e8e8e8;
-  --sidebar-accent-foreground: #4a4a4a;
-  --sidebar-border: #e0e0e0;
-  --sidebar-ring: #4a4a4a;
+  --sidebar-accent: #f4f4f5;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #4f46e5;
 }
 
+/* Ink night */
 .dark {
   color-scheme: dark;
-  --background: #1a1a1a;
-  --foreground: #f0f0f0;
-  --card: #242424;
-  --card-foreground: #f0f0f0;
-  --popover: #2a2a2a;
-  --popover-foreground: #f0f0f0;
-  --primary: #b0b0b0;
-  --primary-foreground: #1a1a1a;
-  --secondary: #333333;
-  --secondary-foreground: #f0f0f0;
-  --muted: #505050;
-  --muted-foreground: #b0b0b0;
-  --accent: #888888;
-  --accent-foreground: #1a1a1a;
-  --destructive: #ef4444;
-  --border: #404040;
-  --input: #2a2a2a;
-  --ring: #b0b0b0;
-  --chart-1: #b0b0b0;
-  --chart-2: #999999;
-  --chart-3: #808080;
-  --chart-4: #696969;
-  --chart-5: #505050;
-  --sidebar: #1f1f1f;
-  --sidebar-foreground: #f0f0f0;
-  --sidebar-primary: #b0b0b0;
-  --sidebar-primary-foreground: #1a1a1a;
-  --sidebar-accent: #333333;
-  --sidebar-accent-foreground: #f0f0f0;
-  --sidebar-border: #404040;
-  --sidebar-ring: #b0b0b0;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    color-scheme: dark;
-    --background: #1a1a1a;
-    --foreground: #f0f0f0;
-    --card: #242424;
-    --card-foreground: #f0f0f0;
-    --popover: #2a2a2a;
-    --popover-foreground: #f0f0f0;
-    --primary: #b0b0b0;
-    --primary-foreground: #1a1a1a;
-    --secondary: #333333;
-    --secondary-foreground: #f0f0f0;
-    --muted: #505050;
-    --muted-foreground: #b0b0b0;
-    --accent: #888888;
-    --accent-foreground: #1a1a1a;
-    --destructive: #ef4444;
-    --border: #404040;
-    --input: #2a2a2a;
-    --ring: #b0b0b0;
-    --chart-1: #b0b0b0;
-    --chart-2: #999999;
-    --chart-3: #808080;
-    --chart-4: #696969;
-    --chart-5: #505050;
-    --sidebar: #1f1f1f;
-    --sidebar-foreground: #f0f0f0;
-    --sidebar-primary: #b0b0b0;
-    --sidebar-primary-foreground: #1a1a1a;
-    --sidebar-accent: #333333;
-    --sidebar-accent-foreground: #f0f0f0;
-    --sidebar-border: #404040;
-    --sidebar-ring: #b0b0b0;
-  }
+  --background: #0b0b0d;
+  --foreground: #fafafa;
+  --card: #131316;
+  --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #1f1f23;
+  --secondary-foreground: #fafafa;
+  --muted: #1c1c20;
+  --muted-foreground: #a1a1aa;
+  --accent: #818cf8;
+  --accent-foreground: #0b0b0d;
+  --destructive: #f87171;
+  --border: #26262b;
+  --input: #18181b;
+  --ring: #818cf8;
+  --chart-1: #6366f1;
+  --chart-2: #818cf8;
+  --chart-3: #a5b4fc;
+  --chart-4: #c7d2fe;
+  --chart-5: #312e81;
+  --sidebar: #101013;
+  --sidebar-foreground: #fafafa;
+  --sidebar-primary: #6366f1;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1c1c20;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #26262b;
+  --sidebar-ring: #818cf8;
 }
 
 @layer base {
   :root {
-    --font-sans: 'DM Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI";
-    --font-heading: 'Space Grotesk', ui-sans-serif;
+    --font-sans: 'DM Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI';
+    --font-heading: var(--font-sans);
+    --font-display: 'Fraunces', ui-serif, Georgia, serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  
+
   * {
     @apply border-border outline-ring/50;
   }
-  
+
   body {
     @apply bg-background text-foreground font-sans;
   }
-  
+
   h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-heading);
-    @apply font-bold tracking-tight;
+    @apply tracking-tight;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
   }
 }
 
@@ -177,13 +150,35 @@
   .font-heading {
     font-family: var(--font-heading);
   }
-  
-  /* Premium gradient borders */
-  .gradient-border {
-    background: linear-gradient(135deg, #4a4a4a, #8b8b8b, #4a4a4a);
+
+  /* Editorial display serif — landing hero + big statements only */
+  .font-display {
+    font-family: var(--font-display);
   }
-  
-  .dark .gradient-border {
-    background: linear-gradient(135deg, #b0b0b0, #888888, #b0b0b0);
+
+  /* Quiet card — flat, no shadow lift. Anti-slop: border only */
+  .card-hover {
+    transition-property: border-color, background-color;
+    transition-duration: 150ms;
+  }
+
+  /* Editorial rule — thin hairline used as section cadence */
+  .rule {
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Paper texture — subtle grain for hero paper only */
+  .paper-grain {
+    position: relative;
+  }
+  .paper-grain::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.03;
+    background-image: radial-gradient(circle at 1px 1px, var(--foreground) 1px, transparent 0);
+    background-size: 20px 20px;
   }
 }

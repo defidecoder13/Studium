@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth'
+import { getErrorMessage } from '@/lib/utils'
 import { headers } from 'next/headers'
 
 export async function GET(
@@ -26,8 +27,8 @@ export async function GET(
     })
     
     return NextResponse.json({ note: record ? record.content : null, updatedAt: record?.updatedAt || null })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }
 
@@ -67,7 +68,7 @@ export async function POST(
     })
 
     return NextResponse.json({ success: true, note: record.content, updatedAt: record.updatedAt })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

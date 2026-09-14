@@ -5,13 +5,12 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { formatDistanceToNow } from 'date-fns'
 import { Bookmark as BookmarkIcon, Search, FileText, ChevronRight } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 
 export default async function BookmarksPage() {
   let user = null
   try {
     user = await getCurrentUser(await headers())
-  } catch (e) {
+  } catch {
     // ignore
   }
   
@@ -19,11 +18,18 @@ export default async function BookmarksPage() {
     redirect('/sign-in')
   }
 
-  const bookmarks = await prisma.bookmark.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: 'desc' },
-    include: { document: true }
-  })
+  let bookmarks: Awaited<ReturnType<typeof prisma.bookmark.findMany>> = []
+  try {
+    bookmarks = await prisma.bookmark.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      include: { document: true },
+    })
+  } catch (e) {
+    // Silent fallback — log for debugging, show "No bookmarks" UI instead of crashing or amber
+    console.error('[BookmarksPage] DB error (showing empty state):', e instanceof Error ? e.message.slice(0, 300) : String(e).slice(0, 300))
+    bookmarks = []
+  }
 
   return (
     <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto pb-24">
@@ -38,8 +44,8 @@ export default async function BookmarksPage() {
       </div>
 
       {bookmarks.length === 0 ? (
-        <div className="p-12 rounded-2xl border border-dashed border-border bg-card/30 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center">
+        <div className="p-12 rounded-xl border border-dashed border-border bg-card flex flex-col items-center justify-center text-center space-y-4">
+          <div className="w-16 h-16 rounded-xl bg-muted flex items-center justify-center">
             <BookmarkIcon className="w-8 h-8 text-muted-foreground/50" />
           </div>
           <div>
@@ -48,7 +54,7 @@ export default async function BookmarksPage() {
               Read a document in your library and use the bookmark feature to save important pages and notes.
             </p>
           </div>
-          <Link href="/app/library" className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow hover:bg-primary/90 h-9 px-4 py-2 mt-2 rounded-xl">
+          <Link href="/app/library" className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2 mt-2 rounded-lg">
             <Search className="w-4 h-4 mr-2" />
             Browse Library
           </Link>
@@ -72,7 +78,7 @@ export default async function BookmarksPage() {
               </h3>
               
               <div className="bg-muted/40 p-3 rounded-xl border border-border/50 mb-4 flex-1">
-                <p className="text-sm text-foreground italic line-clamp-3">"{bm.snippet}"</p>
+                <p className="text-sm text-foreground italic line-clamp-3">&quot;{bm.snippet}&quot;</p>
               </div>
 
               {bm.note && (
@@ -83,9 +89,8 @@ export default async function BookmarksPage() {
               )}
 
               <div className="pt-4 border-t border-border/50 flex items-center justify-end">
-                {/* We don't have a direct route to jump to a page yet, but eventually we'll link this to the reader */}
-                <Link href="/app/library" className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                  <span>Open Document</span>
+                <Link href={`/app/reader/${bm.documentId}?page=${bm.pageNumber}`} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                  <span>Open at Page {bm.pageNumber}</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </Link>
               </div>

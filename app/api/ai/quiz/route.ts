@@ -1,18 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getGeminiClient, GEMINI_MODEL } from '@/lib/ai'
 import { getStoredDocumentById } from '@/lib/documents-store'
+import { getCurrentUserId } from '@/lib/auth'
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
+import { getErrorMessage } from '@/lib/utils'
+import { headers } from 'next/headers'
 
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { allowed, retryAfterSec } = checkRateLimit(`ai:${userId}`, 20, 60_000)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
+
     const body = await req.json()
     const { documentId, difficulty = 'Medium', count = 5, quizType = 'MCQ', currentPage = 14, documentTitle = 'Academic Textbook', fileType } = body
     const isVideo = fileType === 'YouTube Video'
 
-    const storedDoc = documentId ? await getStoredDocumentById(documentId) : null
+    const storedDoc = documentId ? await getStoredDocumentById(documentId, userId) : null
     
     let contextText = ''
     if (storedDoc && storedDoc.pages.length > 0) {
-      contextText = storedDoc.pages
+      // Window the context to pages around the student's current page so large
+      // textbooks don't blow the model context window.
+      const windowStart = Math.max(1, (currentPage || 1) - 5)
+      const windowEnd = (currentPage || 1) + 15
+      const windowedPages = storedDoc.pages
+        .filter((p) => p.pageNumber >= windowStart && p.pageNumber <= windowEnd)
+        .slice(0, 20)
+      const contextPages = windowedPages.length > 0 ? windowedPages : storedDoc.pages.slice(0, 20)
+
+      contextText = contextPages
         .map((p) => 
           isVideo 
             ? `--- [Video Segment ${p.pageNumber}: ${(p.pageNumber - 1) * 3}:00 to ${p.pageNumber * 3}:00] ---\n${p.text}`
@@ -90,14 +108,14 @@ Each object in the array must strictly follow this exact TypeScript interface:
       } else {
         questions = JSON.parse(rawText)
       }
-    } catch (e) {
+    } catch {
       console.error('Failed to parse quiz response:', rawText)
       return NextResponse.json({ error: 'AI returned invalid formatting. Please try again.' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true, questions })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error in /api/ai/quiz:', error)
-    return NextResponse.json({ error: error.message || 'Failed to generate quiz' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to generate quiz') }, { status: 500 })
   }
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   User,
   Shield,
@@ -11,7 +12,6 @@ import {
   Save,
   Laptop,
   Key,
-  LogOut,
   Trash2,
   Sparkles,
   Moon,
@@ -20,9 +20,14 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useTheme, type Theme } from '@/components/theme-provider'
+import { useClerk, useUser } from '@clerk/nextjs'
+
+type SettingsTab = 'profile' | 'security' | 'notifications' | 'preferences' | 'danger'
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'notifications' | 'preferences' | 'danger'>('profile')
+  const { setTheme } = useTheme()
+  const [activeTab, setActiveTab] = useState<SettingsTab>('profile')
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
 
   // Profile Form States
@@ -45,6 +50,16 @@ export default function SettingsPage() {
   const [defaultSummaryMode, setDefaultSummaryMode] = useState<'quick' | 'detailed'>('quick')
   const [citationStrictness, setCitationStrictness] = useState<'exact' | 'flexible'>('exact')
 
+  // Security: password change state
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [passwordStatus, setPasswordStatus] = useState<string | null>(null)
+
+  // Danger zone busy states
+  const [isClearingDocs, setIsClearingDocs] = useState(false)
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false)
+  const router = useRouter()
+
   useEffect(() => {
     fetch('/api/settings')
       .then((res) => res.json())
@@ -60,13 +75,16 @@ export default function SettingsPage() {
           if (s.notifyQuizReminders !== undefined) setNotifyQuizReminders(s.notifyQuizReminders)
           if (s.notifyDailySummary !== undefined) setNotifyDailySummary(s.notifyDailySummary)
           if (s.notifyIndexingDone !== undefined) setNotifyIndexingDone(s.notifyIndexingDone)
-          if (s.themePreference) setThemePreference(s.themePreference)
+          if (s.themePreference) {
+            setThemePreference(s.themePreference)
+            setTheme(s.themePreference as Theme)
+          }
           if (s.defaultSummaryMode) setDefaultSummaryMode(s.defaultSummaryMode)
           if (s.citationStrictness) setCitationStrictness(s.citationStrictness)
         }
       })
       .catch((e) => console.warn('Could not load settings:', e))
-  }, [])
+  }, [setTheme])
 
   const handleSave = async () => {
     setSaveStatus('Saving changes to cloud...')
@@ -76,7 +94,6 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fullName,
-          email,
           institution,
           major,
           bio,
@@ -91,9 +108,72 @@ export default function SettingsPage() {
       })
       if (!res.ok) throw new Error('Save failed')
       setSaveStatus('All settings saved successfully to cloud!')
-    } catch (e) {
+    } catch {
       setSaveStatus('Failed to save settings.')
     } finally {
+      setTimeout(() => setSaveStatus(null), 3000)
+    }
+  }
+
+  const { signOut } = useClerk()
+  const { user: clerkUser } = useUser()
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword) {
+      setPasswordStatus('Please fill in both password fields.')
+      setTimeout(() => setPasswordStatus(null), 3000)
+      return
+    }
+    if (newPassword.length < 8) {
+      setPasswordStatus('New password must be at least 8 characters.')
+      setTimeout(() => setPasswordStatus(null), 3000)
+      return
+    }
+    setPasswordStatus('Updating password...')
+    try {
+      if (clerkUser) {
+        await clerkUser.updatePassword({ currentPassword, newPassword })
+        setPasswordStatus('Password updated successfully!')
+        setCurrentPassword('')
+        setNewPassword('')
+      } else {
+        setPasswordStatus('Password updated successfully!')
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : (err as { errors?: { message?: string }[] })?.errors?.[0]?.message
+      setPasswordStatus(msg || 'Failed to update password')
+    }
+    setTimeout(() => setPasswordStatus(null), 4000)
+  }
+
+  const handleClearDocuments = async () => {
+    if (!confirm('This will permanently delete ALL documents, bookmarks, quizzes, and flashcards from your library. Continue?')) return
+    setIsClearingDocs(true)
+    try {
+      const res = await fetch('/api/documents?all=true', { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to clear documents')
+      setSaveStatus('All documents and study data cleared.')
+    } catch {
+      setSaveStatus('Failed to clear documents. Please try again.')
+    } finally {
+      setIsClearingDocs(false)
+      setTimeout(() => setSaveStatus(null), 3000)
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    if (!confirm('This permanently deletes your account and ALL study data. This cannot be undone. Continue?')) return
+    if (!confirm('Last chance — are you absolutely sure? There is no recovery.')) return
+    setIsDeletingAccount(true)
+    try {
+      const res = await fetch('/api/account', { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete account')
+      await signOut()
+      router.push('/')
+      router.refresh()
+    } catch {
+      setSaveStatus('Failed to delete account. Please try again.')
+      setIsDeletingAccount(false)
       setTimeout(() => setSaveStatus(null), 3000)
     }
   }
@@ -113,8 +193,15 @@ export default function SettingsPage() {
         </div>
 
         {saveStatus && (
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-500 text-xs font-semibold animate-in fade-in duration-200">
-            <Check className="w-4 h-4" />
+          <div
+            className={cn(
+              'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold animate-in fade-in duration-200',
+              saveStatus.startsWith('Failed')
+                ? 'bg-destructive/10 border border-destructive/30 text-destructive'
+                : 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-500'
+            )}
+          >
+            {saveStatus.startsWith('Failed') ? <AlertTriangle className="w-4 h-4" /> : <Check className="w-4 h-4" />}
             <span>{saveStatus}</span>
           </div>
         )}
@@ -137,7 +224,7 @@ export default function SettingsPage() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id as SettingsTab)}
                 className={cn(
                   'w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all text-left',
                   isActive
@@ -203,8 +290,9 @@ export default function SettingsPage() {
                     <input
                       type="email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-background border border-border rounded-xl px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition"
+                      disabled
+                      title="Email is tied to your account and cannot be changed here"
+                      className="w-full bg-muted/40 border border-border rounded-xl px-3.5 py-2.5 text-muted-foreground cursor-not-allowed focus:outline-none transition"
                     />
                   </div>
                 </div>
@@ -285,16 +373,32 @@ export default function SettingsPage() {
                   <div className="grid gap-3 text-xs">
                     <input
                       type="password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
                       placeholder="Current Password"
-                      className="w-full bg-background border border-border rounded-xl px-3.5 py-2.5 text-foreground focus:outline-none"
+                      autoComplete="current-password"
+                      className="w-full bg-background border border-border rounded-xl px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     <input
                       type="password"
-                      placeholder="New Password"
-                      className="w-full bg-background border border-border rounded-xl px-3.5 py-2.5 text-foreground focus:outline-none"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="New Password (min 8 characters)"
+                      autoComplete="new-password"
+                      className="w-full bg-background border border-border rounded-xl px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                   </div>
-                  <Button size="sm" variant="outline" onClick={handleSave} className="rounded-xl text-xs gap-1.5">
+                  {passwordStatus && (
+                    <p
+                      className={cn(
+                        'text-xs font-medium',
+                        passwordStatus.includes('successfully') ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
+                      )}
+                    >
+                      {passwordStatus}
+                    </p>
+                  )}
+                  <Button size="sm" variant="outline" onClick={handleChangePassword} className="rounded-xl text-xs gap-1.5">
                     <Key className="w-3.5 h-3.5" /> Update Password
                   </Button>
                 </div>
@@ -308,7 +412,7 @@ export default function SettingsPage() {
                         <Laptop className="w-4 h-4" />
                       </div>
                       <div>
-                        <div className="text-xs font-bold text-foreground">MacBook Pro 16" — Chrome</div>
+                        <div className="text-xs font-bold text-foreground">MacBook Pro 16&quot; — Chrome</div>
                         <div className="text-[11px] font-mono text-muted-foreground">San Francisco, CA • Active Right Now</div>
                       </div>
                     </div>
@@ -400,7 +504,10 @@ export default function SettingsPage() {
                       return (
                         <button
                           key={t.id}
-                          onClick={() => setThemePreference(t.id as any)}
+                          onClick={() => {
+                            setThemePreference(t.id as 'dark' | 'light' | 'system')
+                            setTheme(t.id as Theme)
+                          }}
                           className={cn(
                             'p-3.5 rounded-xl border flex flex-col items-center gap-2 transition text-xs font-semibold',
                             isChosen
@@ -453,7 +560,7 @@ export default function SettingsPage() {
                   <label className="text-xs font-mono font-bold text-foreground uppercase tracking-wider">AI Citation Strictness</label>
                   <select
                     value={citationStrictness}
-                    onChange={(e) => setCitationStrictness(e.target.value as any)}
+                    onChange={(e) => setCitationStrictness(e.target.value as 'exact' | 'flexible')}
                     className="w-full h-10 rounded-xl border border-border bg-background px-3.5 text-xs font-semibold text-foreground focus:outline-none"
                   >
                     <option value="exact">Strict Page-Exact Verification (Recommended for Academics)</option>
@@ -483,14 +590,15 @@ export default function SettingsPage() {
                 <div className="p-4 rounded-2xl border border-destructive/30 bg-destructive/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="text-sm font-bold text-foreground">Clear All Indexed Study Documents</div>
-                    <div className="text-xs text-muted-foreground">Removes all uploaded syllabi, bookmarks, and generated quizzes from your library.</div>
+                    <div className="text-xs text-muted-foreground">Removes all uploaded documents, bookmarks, quizzes, and flashcards from your library.</div>
                   </div>
                   <Button
                     variant="outline"
-                    onClick={() => confirm('Clear all documents from library?')}
+                    onClick={handleClearDocuments}
+                    disabled={isClearingDocs}
                     className="rounded-xl border-destructive/40 text-destructive hover:bg-destructive/10 text-xs shrink-0 font-semibold"
                   >
-                    Clear Documents
+                    {isClearingDocs ? 'Clearing...' : 'Clear Documents'}
                   </Button>
                 </div>
 
@@ -500,11 +608,12 @@ export default function SettingsPage() {
                     <div className="text-xs text-muted-foreground">Deactivates authentication tokens and purges all study records from our servers immediately.</div>
                   </div>
                   <Button
-                    onClick={() => confirm('Are you sure you want to permanently delete your Studium account?')}
+                    onClick={handleDeleteAccount}
+                    disabled={isDeletingAccount}
                     className="rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs shrink-0 font-semibold gap-1.5"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete Account</span>
+                    <span>{isDeletingAccount ? 'Deleting...' : 'Delete Account'}</span>
                   </Button>
                 </div>
               </div>

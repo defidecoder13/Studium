@@ -2,21 +2,17 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import {
   Layers,
   FileText,
   Clock,
   Search,
-  Plus,
   Trash2,
   ChevronRight,
   ChevronDown,
   Sparkles,
   BookOpen,
-  Video,
-  CheckCircle2,
-  AlertCircle
+  Video
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -45,33 +41,49 @@ interface FlashcardDeck {
   cards: Flashcard[]
 }
 
+interface DeckStats {
+  totalDecks: number
+  totalCards: number
+  dueCardsCount: number
+}
+
+const EMPTY_STATS: DeckStats = { totalDecks: 0, totalCards: 0, dueCardsCount: 0 }
+
+async function fetchDecksFromApi(): Promise<{ decks: FlashcardDeck[]; stats: DeckStats }> {
+  const res = await fetch('/api/flashcards')
+  const data = await res.json()
+  if (data.success && data.decks) {
+    return { decks: data.decks, stats: data.stats || EMPTY_STATS }
+  }
+  return { decks: [], stats: EMPTY_STATS }
+}
+
 export default function FlashcardsPage() {
-  const router = useRouter()
   const [decks, setDecks] = useState<FlashcardDeck[]>([])
-  const [stats, setStats] = useState({ totalDecks: 0, totalCards: 0, dueCardsCount: 0 })
+  const [stats, setStats] = useState<DeckStats>(EMPTY_STATS)
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedDeckId, setExpandedDeckId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const fetchDecks = async () => {
-    setIsLoading(true)
-    try {
-      const res = await fetch('/api/flashcards')
-      const data = await res.json()
-      if (data.success && data.decks) {
-        setDecks(data.decks)
-        if (data.stats) setStats(data.stats)
-      }
-    } catch (e) {
-      console.error('Failed to load decks:', e)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   useEffect(() => {
-    fetchDecks()
+    let cancelled = false
+    fetchDecksFromApi()
+      .then(({ decks: fetchedDecks, stats: fetchedStats }) => {
+        if (!cancelled) {
+          setDecks(fetchedDecks)
+          setStats(fetchedStats)
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) console.error('Failed to load decks:', e)
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const handleDeleteDeck = async (deckId: string, e: React.MouseEvent) => {
@@ -151,7 +163,7 @@ export default function FlashcardsPage() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0">
+          <div className="w-12 h-12 rounded-2xl bg-accent/10 text-accent flex items-center justify-center shrink-0">
             <Layers className="w-6 h-6" />
           </div>
           <div>
@@ -161,7 +173,7 @@ export default function FlashcardsPage() {
         </div>
 
         <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0">
+          <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
             <FileText className="w-6 h-6" />
           </div>
           <div>
@@ -192,7 +204,7 @@ export default function FlashcardsPage() {
             placeholder="Search decks or terms..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-10 pr-4 rounded-xl bg-card border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 transition placeholder:text-muted-foreground"
+            className="w-full h-10 pl-10 pr-4 rounded-xl bg-card border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 transition placeholder:text-muted-foreground"
           />
         </div>
       </div>
@@ -216,17 +228,17 @@ export default function FlashcardsPage() {
         </div>
       ) : filteredDecks.length === 0 ? (
         <div className="p-12 md:p-16 rounded-3xl border border-dashed border-border bg-card/50 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
             <Sparkles className="w-8 h-8" />
           </div>
           <div className="space-y-1 max-w-md">
             <h3 className="text-lg font-heading font-bold text-foreground">No flashcard decks found</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              You haven't generated any flashcards matching your criteria yet. Open any document or YouTube video in your Library and click the <strong className="text-foreground">Flashcards</strong> tab in the AI panel to instantly generate Anki decks!
+              You haven&apos;t generated any flashcards matching your criteria yet. Open any document or YouTube video in your Library and click the <strong className="text-foreground">Flashcards</strong> tab in the AI panel to instantly generate Anki decks!
             </p>
           </div>
           <Link href="/app/library">
-            <Button className="mt-2 h-10 px-6 rounded-xl bg-foreground text-background font-bold text-xs shadow-sm">
+            <Button className="mt-2 h-10 px-6 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-sm">
               Explore Library
             </Button>
           </Link>
@@ -241,14 +253,16 @@ export default function FlashcardsPage() {
               return (
                 <div 
                   key={deck.id}
-                  className="rounded-2xl border border-border bg-card hover:border-foreground/20 transition-all shadow-sm flex flex-col justify-between overflow-hidden group"
+                  className="rounded-2xl border border-border bg-card hover:border-primary/40 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 shadow-sm flex flex-col justify-between overflow-hidden group"
                 >
+                  {/* Accent spine */}
+                  <div className="h-1 bg-primary/40" />
                   <div className="p-6 space-y-4">
                     
                     {/* Badge & Trash */}
                     <div className="flex items-center justify-between gap-2">
                       <span className="px-2.5 py-1 rounded-md bg-muted text-muted-foreground text-[10px] font-mono font-bold flex items-center gap-1.5 truncate">
-                        {isVideo ? <Video className="w-3 h-3 text-red-500 shrink-0" /> : <BookOpen className="w-3 h-3 text-blue-500 shrink-0" />}
+                        {isVideo ? <Video className="w-3 h-3 text-destructive shrink-0" /> : <BookOpen className="w-3 h-3 text-primary shrink-0" />}
                         <span className="truncate">{deck.document?.title || 'Study Material'}</span>
                       </span>
                       <button
@@ -288,7 +302,7 @@ export default function FlashcardsPage() {
                     </button>
 
                     <Link href={`/app/review?deckId=${deck.id}`}>
-                      <Button size="sm" className="h-8 px-3.5 rounded-lg text-xs font-bold bg-foreground text-background hover:bg-primary hover:text-primary-foreground transition">
+                      <Button size="sm" className="h-8 px-3.5 rounded-lg text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition">
                         <span>Study Deck</span>
                         <ChevronRight className="w-3 h-3 ml-1" />
                       </Button>
@@ -297,14 +311,14 @@ export default function FlashcardsPage() {
 
                   {/* Expanded Cards View Inside Card */}
                   {expandedDeckId === deck.id && (
-                    <div className="px-6 py-4 bg-muted/10 border-t border-border space-y-3 max-h-80 overflow-y-auto divide-y divide-border/60">
+                    <div className="px-6 py-4 bg-muted/30 border-t border-border space-y-3 max-h-80 overflow-y-auto divide-y divide-border/60">
                       {deck.cards.length === 0 ? (
                         <div className="text-center py-4 text-xs text-muted-foreground font-mono">No cards in this deck.</div>
                       ) : (
                         deck.cards.map((card, idx) => (
                           <div key={card.id} className="pt-3 first:pt-0 space-y-1.5 text-xs">
                             <div className="flex items-start justify-between gap-2">
-                              <span className="font-bold text-foreground leading-snug flex-1">
+                              <span className="font-heading font-bold text-foreground leading-snug flex-1">
                                 {idx + 1}. {card.front}
                               </span>
                               <button
@@ -315,7 +329,7 @@ export default function FlashcardsPage() {
                                 <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
-                            <div className="text-muted-foreground bg-muted/50 p-2 rounded-md font-sans">
+                            <div className="text-muted-foreground bg-muted/40 border border-border/60 p-2 rounded-md font-sans">
                               {card.back}
                             </div>
                             <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">

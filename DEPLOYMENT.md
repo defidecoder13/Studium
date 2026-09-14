@@ -23,25 +23,33 @@ Expand the **Environment Variables** section before clicking Deploy. You must co
 
 Add the following variables exactly as named:
 
-### Database & Auth
-- `DATABASE_URL` = `your-neon-database-url`
-- `BETTER_AUTH_SECRET` = *(Generate a random 32-character string, e.g., `openssl rand -base64 32`)*
-- `BETTER_AUTH_URL` = `https://your-vercel-domain.vercel.app` *(You can set this after your first deployment generates a URL!)*
+### Database & Auth (Clerk)
+- `DATABASE_URL` = `your-neon-database-url` (Neon pooled URL, e.g. `ep-...-pooler.*.neon.tech/neondb?sslmode=require&channel_binding=require`)
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` = `pk_test_...` (from Clerk Dashboard)
+- `CLERK_SECRET_KEY` = `sk_test_...`
+- `NEXT_PUBLIC_CLERK_SIGN_IN_URL` = `/sign-in`
+- `NEXT_PUBLIC_CLERK_SIGN_UP_URL` = `/sign-up`
+- `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL` = `/app/dashboard`
+- `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL` = `/app/dashboard`
 
 ### Cloudflare R2 (Object Storage)
 - `R2_ACCOUNT_ID` = `your-cloudflare-account-id`
 - `R2_ACCESS_KEY_ID` = `your-r2-access-key-id`
 - `R2_SECRET_ACCESS_KEY` = `your-r2-secret-access-key`
-- `R2_BUCKET_NAME` = `studium-pdfs` *(or whichever name you gave your bucket)*
-- `R2_PUBLIC_URL` = `https://pub-xxxxxx.r2.dev` *(from your bucket settings)*
+- `R2_BUCKET_NAME` = `studium` *(must match your real bucket name)*
+- `R2_PUBLIC_URL` = `` *(leave empty — files are served via `/api/documents/file/[key]` proxy)*
 
 ### AI Integration
 - `GEMINI_API_KEY` = `your-gemini-api-key`
 
+### App URL (SEO / sitemap)
+- `NEXT_PUBLIC_APP_URL` = `https://your-app.vercel.app` *(your canonical Vercel domain)*
+
+> **R2 note:** `R2_PUBLIC_URL` is optional — Studium serves files via `/api/documents/file/[key]` proxy. Leave it empty unless you use a custom R2 public domain.
+
 ## Step 4: Deploy & Initialize Database
-1. Click **Deploy**. Vercel will install dependencies and run `npm run build`. Since it passed locally, it will pass here!
-2. **CRITICAL POST-DEPLOY STEP:** Since Vercel builds the UI but doesn't run database migrations automatically for Prisma, you need to push your Prisma schema to your live DB if you ever make changes. Because you already ran `npx prisma db push` locally, your Neon DB is **already set up** and ready to receive production traffic!
-   - In the future, if you change your schema, you can run `npx prisma db push` from your local machine to instantly update your cloud database!
+1. Click **Deploy**. Vercel runs `npm run build:vercel` = `prisma generate && prisma migrate deploy && next build` (see `vercel.json: buildCommand`). The DB is already baselined via `prisma/migrations/20260902200721_init` — `migrate deploy` will be a no-op on first deploy.
+2. **If you change the Prisma schema later:** `npx prisma migrate dev --name <change>` locally, commit the new `prisma/migrations/` folder, push — Vercel will auto-apply it. Never use `prisma db push` on prod after baseline.
 
 ## Step 5: Verification Checklist
 Once Vercel gives you your live URL (e.g. `studium-ai.vercel.app`), visit it and verify:

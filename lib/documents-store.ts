@@ -1,4 +1,6 @@
 import { prisma } from './db'
+import { DEMO_USER_ID, DEMO_USER_EMAIL, DEMO_USER_NAME } from './auth'
+import { generateEmbedding } from './ai-embeddings'
 
 export interface PageChunk {
   pageNumber: number
@@ -15,31 +17,35 @@ export interface StoredDocument {
   folder: string
   pages: PageChunk[]
   fileUrl?: string
+  fileSize?: string
 }
 
-const DUMMY_USER_ID = 'user_123'
-
-async function ensureDummyUser() {
+/**
+ * Ensure the given user row exists so documents can be created against it.
+ * Real authenticated users already exist; this mainly covers the dev/demo user.
+ */
+export async function ensureUserExists(userId: string) {
   try {
-    const user = await prisma.user.findUnique({ where: { id: DUMMY_USER_ID } })
-    if (!user) {
+    const existing = await prisma.user.findUnique({ where: { id: userId } })
+    if (!existing) {
       await prisma.user.create({
         data: {
-          id: DUMMY_USER_ID,
-          name: 'Demo User',
-          email: 'demo@example.com',
-          emailVerified: true
-        }
+          id: userId,
+          name: userId === DEMO_USER_ID ? DEMO_USER_NAME : 'Studium User',
+          email: userId === DEMO_USER_ID ? DEMO_USER_EMAIL : `user_${userId}@studium.local`,
+          emailVerified: true,
+        },
       })
     }
   } catch (e) {
-    console.error('Error ensuring dummy user:', e)
+    console.error('Error ensuring user exists:', e)
   }
 }
 
-export const getStoredDocuments = async (): Promise<StoredDocument[]> => {
+export const getStoredDocuments = async (userId: string): Promise<StoredDocument[]> => {
   try {
     const docs = await prisma.document.findMany({
+      where: { userId },
       include: { pages: true },
       orderBy: { uploadedAt: 'desc' }
     })
@@ -52,6 +58,7 @@ export const getStoredDocuments = async (): Promise<StoredDocument[]> => {
       uploadedAt: d.uploadedAt.toISOString(),
       folder: d.folder,
       fileUrl: d.fileUrl || undefined,
+      fileSize: d.fileSize,
       pages: d.pages.map(p => ({
         pageNumber: p.pageNumber,
         text: p.textContent,
@@ -64,10 +71,10 @@ export const getStoredDocuments = async (): Promise<StoredDocument[]> => {
   }
 }
 
-export const getStoredDocumentById = async (id: string): Promise<StoredDocument | null> => {
+export const getStoredDocumentById = async (id: string, userId?: string): Promise<StoredDocument | null> => {
   try {
-    const d = await prisma.document.findUnique({
-      where: { id },
+    const d = await prisma.document.findFirst({
+      where: { id, ...(userId ? { userId } : {}) },
       include: { pages: true }
     })
     if (!d) return null
@@ -79,6 +86,7 @@ export const getStoredDocumentById = async (id: string): Promise<StoredDocument 
       uploadedAt: d.uploadedAt.toISOString(),
       folder: d.folder,
       fileUrl: d.fileUrl || undefined,
+      fileSize: d.fileSize,
       pages: d.pages.map(p => ({
         pageNumber: p.pageNumber,
         text: p.textContent,
@@ -91,10 +99,8 @@ export const getStoredDocumentById = async (id: string): Promise<StoredDocument 
   }
 }
 
-import { generateEmbedding } from './ai-embeddings'
-
-export const saveStoredDocument = async (doc: StoredDocument): Promise<void> => {
-  await ensureDummyUser()
+export const saveStoredDocument = async (doc: StoredDocument, userId: string): Promise<void> => {
+  await ensureUserExists(userId)
   
   // Upsert the core document record first
   await prisma.document.upsert({
@@ -105,15 +111,17 @@ export const saveStoredDocument = async (doc: StoredDocument): Promise<void> => 
       totalPages: doc.totalPages,
       folder: doc.folder,
       fileUrl: doc.fileUrl,
+      ...(doc.fileSize ? { fileSize: doc.fileSize } : {}),
     },
     create: {
       id: doc.id,
-      userId: DUMMY_USER_ID,
+      userId,
       title: doc.title,
       fileType: doc.fileType,
       totalPages: doc.totalPages,
       folder: doc.folder,
       fileUrl: doc.fileUrl,
+      ...(doc.fileSize ? { fileSize: doc.fileSize } : {}),
     }
   })
 
@@ -145,22 +153,35 @@ export const saveStoredDocument = async (doc: StoredDocument): Promise<void> => 
   }
 }
 
-export const deleteStoredDocument = async (id: string): Promise<boolean> => {
+export const deleteStoredDocument = async (id: string, userId: string): Promise<boolean> => {
   try {
-    await prisma.document.delete({ where: { id } })
-    return true
-  } catch (e) {
+    // Fetch fileUrl first so we can clean up the R2/local object after DB delete.
+    const existing = await prisma.document.findFirst({
+      where: { id, userId },
+      select: { fileUrl: true },
+    })
+    const result = await prisma.document.deleteMany({ where: { id, userId } })
+    if (result.count > 0 && existing?.fileUrl) {
+      const { extractKeyFromFileUrl, deleteFile } = await import('./storage-adapter')
+      const key = extractKeyFromFileUrl(existing.fileUrl)
+      if (key) await deleteFile(key)
+    }
+    return result.count > 0
+  } catch {
     return false
   }
 }
 
-export const searchDocumentPages = async (query: string, documentId?: string) => {
+export const searchDocumentPages = async (query: string, documentId?: string, userId?: string) => {
   const q = query.toLowerCase().trim()
   if (!q) return []
 
   try {
     const targetDocs = await prisma.document.findMany({
-      where: documentId ? { id: documentId } : {},
+      where: {
+        ...(documentId ? { id: documentId } : {}),
+        ...(userId ? { userId } : {}),
+      },
       include: { pages: true }
     })
     

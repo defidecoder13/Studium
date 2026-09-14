@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { saveStoredDocument, StoredDocument, PageChunk } from '@/lib/documents-store'
+import { getCurrentUserId } from '@/lib/auth'
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
+import { getErrorMessage } from '@/lib/utils'
+import { headers } from 'next/headers'
 
 function extractVideoId(url: string) {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/
@@ -10,6 +14,10 @@ function extractVideoId(url: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { allowed, retryAfterSec } = checkRateLimit(`ingest:${userId}`, 10, 60_000)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
     const { url, title, folder = 'General' } = await req.json()
 
     if (!url) {
@@ -22,11 +30,34 @@ export async function POST(req: NextRequest) {
     }
 
     // Fetch transcript
-    let transcriptData = []
+    let transcriptData: Array<{ text: string; duration: number; offset: number }> = []
     try {
       transcriptData = await YoutubeTranscript.fetchTranscript(videoId)
-    } catch (e: any) {
+    } catch {
       return NextResponse.json({ error: 'Could not fetch transcript. The video might not have captions enabled.' }, { status: 400 })
+    }
+
+    if (transcriptData.length === 0) {
+      return NextResponse.json({ error: 'Transcript was empty. The video might not have captions enabled.' }, { status: 400 })
+    }
+
+    // Detect the offset unit. youtube-transcript v1.3.1 parses two caption formats:
+    //  - srv3:  <p t="1234" d="567"> → offset & duration in MILLISECONDS
+    //  - classic: <text start="12.3" dur="5.1"> → offset & duration in SECONDS
+    // Segment gaps are ~2000-6000 in ms, but ~2-6 in seconds, so the median gap
+    // cleanly tells the two apart (works even for short videos).
+    let offsetsInSeconds = true
+    if (transcriptData.length >= 2) {
+      const sortedOffsets = transcriptData.map((i) => i.offset).sort((a, b) => a - b)
+      const gaps = sortedOffsets
+        .slice(1)
+        .map((v, i) => v - sortedOffsets[i])
+        .filter((g) => g > 0)
+      if (gaps.length > 0) {
+        const sortedGaps = [...gaps].sort((a, b) => a - b)
+        const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)]
+        offsetsInSeconds = medianGap < 100
+      }
     }
 
     // Chunk into "Pages" (1 page = 3 minutes of video)
@@ -35,9 +66,7 @@ export async function POST(req: NextRequest) {
     const pagesMap: Record<number, string[]> = {}
 
     for (const item of transcriptData) {
-      // offset is in milliseconds in some versions, or seconds. YoutubeTranscript returns offset in milliseconds or seconds?
-      // Actually youtube-transcript returns { text: string, duration: number, offset: number } where offset is in milliseconds.
-      const offsetMs = item.offset
+      const offsetMs = offsetsInSeconds ? item.offset * 1000 : item.offset
       const pageNumber = Math.floor(offsetMs / CHUNK_SIZE_MS) + 1
       
       if (!pagesMap[pageNumber]) pagesMap[pageNumber] = []
@@ -68,9 +97,10 @@ export async function POST(req: NextRequest) {
       folder,
       pages,
       fileUrl: embedUrl,
+      fileSize: 'Video',
     }
 
-    await saveStoredDocument(newDoc)
+    await saveStoredDocument(newDoc, userId)
 
     return NextResponse.json({
       success: true,
@@ -83,8 +113,8 @@ export async function POST(req: NextRequest) {
         fileUrl: newDoc.fileUrl,
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error ingesting youtube video:', error)
-    return NextResponse.json({ error: error.message || 'Failed to ingest video' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to ingest video') }, { status: 500 })
   }
 }

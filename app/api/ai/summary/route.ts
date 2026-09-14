@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getGeminiClient, GEMINI_MODEL } from '@/lib/ai'
 import { getStoredDocumentById } from '@/lib/documents-store'
+import { getCurrentUserId } from '@/lib/auth'
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
+import { getErrorMessage } from '@/lib/utils'
+import { headers } from 'next/headers'
 
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { allowed, retryAfterSec } = checkRateLimit(`ai:${userId}`, 20, 60_000)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
+
     const body = await req.json()
     const { documentId, currentPage = 14, mode = 'quick', documentTitle = 'Academic Textbook' } = body
 
-    const storedDoc = documentId ? await getStoredDocumentById(documentId) : null
+    const storedDoc = documentId ? await getStoredDocumentById(documentId, userId) : null
     
     let pageText = ''
     if (storedDoc) {
@@ -47,14 +56,14 @@ Output ONLY valid, parseable JSON as a raw object without markdown fences (\`\`\
     let summaryData = {}
     try {
       summaryData = JSON.parse(rawText)
-    } catch (e) {
+    } catch {
       const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
       summaryData = JSON.parse(cleaned)
     }
 
     return NextResponse.json({ success: true, summary: summaryData })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error in /api/ai/summary:', error)
-    return NextResponse.json({ error: error.message || 'Failed to generate summary' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to generate summary') }, { status: 500 })
   }
 }

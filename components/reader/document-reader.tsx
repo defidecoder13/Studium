@@ -11,32 +11,24 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
   FileText,
   MessageSquare,
   HelpCircle,
   Edit3,
-  Copy,
   Check,
-  RefreshCw,
   Send,
   BookOpen,
   Clock,
-  Award,
   AlertCircle,
   Download,
   Save,
   CheckCircle2,
   Layers,
-  Search,
-  Share2,
   BookmarkIcon,
   RotateCcw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, getErrorMessage } from '@/lib/utils'
 
 export interface DocumentData {
   id: string
@@ -57,6 +49,26 @@ interface DocumentReaderProps {
   onClose: () => void
 }
 
+type WorkspaceTab = 'chat' | 'quiz' | 'flashcards' | 'notes'
+type QuizType = 'MCQ' | 'True/False' | 'Fill in the Blank' | 'Short Answer'
+
+interface QuizQuestion {
+  question: string
+  options: string[]
+  correct: number
+  pageRef: number
+  explanation: string
+  topic?: string
+}
+
+interface QuizApiQuestion {
+  question: string
+  options?: string[]
+  correctIndex?: number
+  sourcePage?: number
+  explanation: string
+}
+
 export function DocumentReader({
   document,
   initialPage = 1,
@@ -65,6 +77,9 @@ export function DocumentReader({
 }: DocumentReaderProps) {
   // Left side state
   const [currentPage, setCurrentPage] = useState(initialPage || document.currentPage || 1)
+  // Free-text buffer for the page navigator so the user can clear/retype the
+  // number (a purely controlled input would snap back to the old page).
+  const [pageInput, setPageInput] = useState(String(initialPage || document.currentPage || 1))
   const pdfContainerRef = useRef<HTMLDivElement>(null)
   const [pdfNumPages, setPdfNumPages] = useState<number>(document.totalPages || 1)
   const [pdfWidth, setPdfWidth] = useState<number>(600)
@@ -114,8 +129,71 @@ export function DocumentReader({
     if (el) el.scrollIntoView({ behavior: 'smooth' })
   }
 
+  // Keep the navigator's free-text buffer in sync whenever the page changes
+  // (scrolling, prev/next arrows, citation chips, etc.).
+  useEffect(() => {
+    setPageInput(String(currentPage))
+  }, [currentPage])
+
+  /**
+   * Renders AI answer text with INLINE clickable citations.
+   * - PDFs: every `[Page X]` marker becomes a chip that jumps to that page.
+   * - Videos: every `[M:SS - M:SS]` / `[H:MM:SS - H:MM:SS]` range becomes a
+   *   chip that jumps to the matching 3-minute transcript segment.
+   * Non-citation text is preserved exactly (whitespace pre-wrap intact).
+   */
+  const renderAiMessageText = (text: string) => {
+    const isVideo = document.fileType === 'YouTube Video'
+    const chipClass =
+      'inline-flex items-center mx-0.5 px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 font-mono text-[10px] font-bold hover:bg-primary/20 transition align-baseline cursor-pointer'
+
+    if (isVideo) {
+      // Match timestamp ranges like [0:00 - 3:00] or [1:05:30 - 1:08:30]
+      const tokenRe = /(\[\d+:\d{2}(?::\d{2})?\s*-\s*\d+:\d{2}(?::\d{2})?\])/g
+      return text.split(tokenRe).map((part, i) => {
+        const m = part.match(/^\[(\d+):(\d{2})(?::(\d{2}))?\s*-\s*\d+:\d{2}(?::\d{2})?\]$/)
+        if (!m) return <span key={i}>{part}</span>
+        const h = m[3] ? parseInt(m[1], 10) : 0
+        const min = parseInt(m[3] ? m[2] : m[1], 10)
+        const sec = parseInt(m[3] ? m[3] : m[2], 10)
+        const startSeconds = h * 3600 + min * 60 + sec
+        const segment = Math.floor(startSeconds / 180) + 1
+        return (
+          <button
+            key={i}
+            type="button"
+            onClick={() => jumpToPage(segment)}
+            className={chipClass}
+            title={`Jump to segment ${segment} (${Math.max(1, (segment - 1) * 3)}:00)`}
+          >
+            {part}
+          </button>
+        )
+      })
+    }
+
+    // PDFs: match [Page X] markers
+    const pageRe = /(\[Page\s+\d+\])/gi
+    return text.split(pageRe).map((part, i) => {
+      const m = part.match(/^\[Page\s+(\d+)\]$/i)
+      if (!m) return <span key={i}>{part}</span>
+      const page = parseInt(m[1], 10)
+      return (
+        <button
+          key={i}
+          type="button"
+          onClick={() => jumpToPage(page)}
+          className={chipClass}
+          title={`Jump to Page ${page}`}
+        >
+          {part}
+        </button>
+      )
+    })
+  }
+
   // Right side state
-  const [activeTab, setActiveTab] = useState<'chat' | 'quiz' | 'notes' | 'flashcards'>(initialTab as any)
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab)
 
   // Chat tab state
   const [chatMessages, setChatMessages] = useState<
@@ -132,14 +210,14 @@ export function DocumentReader({
   // Quiz tab state
   const [quizDifficulty, setQuizDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Medium')
   const [quizQuestionCount, setQuizQuestionCount] = useState<number>(5)
-  const [quizType, setQuizType] = useState<'MCQ' | 'True/False' | 'Fill in the Blank' | 'Short Answer'>('MCQ')
+  const [quizType, setQuizType] = useState<QuizType>('MCQ')
   const [quizState, setQuizState] = useState<'setup' | 'playing' | 'results'>('setup')
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [quizAnswers, setQuizAnswers] = useState<Array<{ correct: boolean; chosen: number }>>([])
   const [quizTimerSeconds, setQuizTimerSeconds] = useState(0)
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
-  const [activeQuizQuestions, setActiveQuizQuestions] = useState<any[]>([])
+  const [activeQuizQuestions, setActiveQuizQuestions] = useState<QuizQuestion[]>([])
 
   // Flashcards tab state
   const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState(false)
@@ -177,7 +255,6 @@ export function DocumentReader({
 
   // Notes tab state
   const [userNotes, setUserNotes] = useState('')
-  const [activeNoteTab, setActiveNoteTab] = useState<'edit' | 'preview'>('edit')
   const [notesSaveStatus, setNotesSaveStatus] = useState('Saved just now')
   const [bookmarkedPages, setBookmarkedPages] = useState<number[]>([])
   const [isSavingBookmark, setIsSavingBookmark] = useState(false)
@@ -187,9 +264,10 @@ export function DocumentReader({
       .then((res) => res.json())
       .then((data) => {
         if (data.bookmarks && Array.isArray(data.bookmarks)) {
-          const pages = data.bookmarks
-            .filter((b: any) => b.documentId === document.id)
-            .map((b: any) => b.pageNumber)
+          const saved: Array<{ documentId: string; pageNumber: number }> = data.bookmarks
+          const pages = saved
+            .filter((b) => b.documentId === document.id)
+            .map((b) => b.pageNumber)
           setBookmarkedPages(pages)
         }
       })
@@ -266,7 +344,7 @@ export function DocumentReader({
     try {
       if (isAlready) {
         setBookmarkedPages((prev) => prev.filter((p) => p !== currentPage))
-        await fetch(`/api/bookmarks?id=${encodeURIComponent(`bm_${document.id}_${currentPage}`)}`, { method: 'DELETE' })
+        await fetch(`/api/bookmarks?documentId=${encodeURIComponent(document.id)}&pageNumber=${currentPage}`, { method: 'DELETE' })
       } else {
         setBookmarkedPages((prev) => [...prev, currentPage])
         const rawBody = `Page ${currentPage}`
@@ -345,12 +423,12 @@ export function DocumentReader({
           prev.map((m) => (m.id === aiId ? { ...m, text: aiText, citations: uniqueCitations } : m))
         )
       }
-    } catch (error: any) {
+    } catch (error) {
       console.warn('AI chat failed:', error)
       setChatMessages((prev) => [...prev, {
         id: `msg-err-${Date.now()}`,
         sender: 'ai',
-        text: `Error: ${error.message || 'Failed to connect to AI server.'}`
+        text: `Error: ${getErrorMessage(error, 'Failed to connect to AI server.')}`
       }])
       setIsAiTyping(false)
     }
@@ -382,7 +460,7 @@ export function DocumentReader({
       if (!res.ok) throw new Error('Failed quiz API')
       const data = await res.json()
       if (data.questions && Array.isArray(data.questions) && data.questions.length > 0) {
-        const mapped = data.questions.map((q: any) => ({
+        const mapped: QuizQuestion[] = data.questions.map((q: QuizApiQuestion) => ({
           question: q.question,
           options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
           correct: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
@@ -491,13 +569,26 @@ export function DocumentReader({
             <div className="flex items-center gap-1 text-xs font-mono">
               <input 
                 type="number" 
-                value={currentPage} 
+                value={pageInput}
                 onChange={(e) => {
-                  const val = parseInt(e.target.value)
-                  if (!isNaN(val)) jumpToPage(val)
+                  const raw = e.target.value
+                  setPageInput(raw)
+                  const val = parseInt(raw, 10)
+                  const max = pdfNumPages || document.totalPages || 100
+                  if (!isNaN(val) && val >= 1 && val <= max) jumpToPage(val)
+                }}
+                onBlur={() => setPageInput(String(currentPage))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const val = parseInt(pageInput, 10)
+                    const max = pdfNumPages || document.totalPages || 100
+                    if (!isNaN(val) && val >= 1 && val <= max) jumpToPage(val)
+                    setPageInput(String(currentPage))
+                    ;(e.target as HTMLInputElement).blur()
+                  }
                 }}
                 min={1}
-                max={document.totalPages || 100}
+                max={pdfNumPages || document.totalPages || 100}
                 className="w-10 text-center bg-background border border-border rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-primary appearance-none"
               />
               <span className="text-muted-foreground">/ {pdfNumPages || document.totalPages || 1}</span>
@@ -522,10 +613,6 @@ export function DocumentReader({
           >
             <BookmarkIcon className={cn('w-3.5 h-3.5', bookmarkedPages.includes(currentPage) ? 'fill-amber-500 text-amber-500' : 'text-accent')} />
             <span>{bookmarkedPages.includes(currentPage) ? `Bookmarked Page ${currentPage}` : `Bookmark Pg ${currentPage}`}</span>
-          </Button>
-          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs rounded-lg border-border hidden lg:flex">
-            <Share2 className="w-3.5 h-3.5" />
-            <span>Share Hub</span>
           </Button>
           <Button
             size="sm"
@@ -557,7 +644,7 @@ export function DocumentReader({
               <div className="mt-4 p-4 rounded-xl bg-background border border-border shadow-sm flex items-center gap-3">
                 <AlertCircle className="w-5 h-5 text-muted-foreground shrink-0" />
                 <p className="text-sm text-muted-foreground font-mono">
-                  <strong className="text-foreground">Transcript Syncing:</strong> The video transcript has been automatically chunked into 3-minute "Pages". Adjust the Page counter at the top right to match your video timestamp (e.g., 7:00 = Page 3) for the AI to have accurate context of what you are watching.
+                  <strong className="text-foreground">Transcript Syncing:</strong> The video transcript has been automatically chunked into 3-minute &quot;Pages&quot;. Adjust the Page counter at the top right to match your video timestamp (e.g., 7:00 = Page 3) for the AI to have accurate context of what you are watching.
                 </p>
               </div>
             </div>
@@ -617,22 +704,22 @@ export function DocumentReader({
           {/* Tabs Header Navigation */}
           <div className="h-12 border-b border-border bg-muted/30 px-3 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-1">
-              {[
+              {([
                 { id: 'chat', label: 'Chat', icon: MessageSquare },
                 { id: 'quiz', label: 'Quiz', icon: HelpCircle },
                 { id: 'flashcards', label: 'Flashcards', icon: Layers },
                 { id: 'notes', label: 'Notes', icon: Edit3 },
-              ].map((tab) => {
+              ] as const).map((tab) => {
                 const Icon = tab.icon
                 const isActive = activeTab === tab.id
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
+                    onClick={() => setActiveTab(tab.id)}
                     className={cn(
                       'flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200',
                       isActive
-                        ? 'bg-foreground text-background shadow-sm'
+                        ? 'bg-primary/10 text-primary font-semibold'
                         : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
                     )}
                   >
@@ -654,6 +741,37 @@ export function DocumentReader({
               <div className="flex flex-col h-full animate-in fade-in duration-200">
                 
                 {/* Chat Message Stream */}
+                {chatMessages.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center space-y-5 py-10 min-h-[320px]">
+                    <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+                      <MessageSquare className="w-6 h-6" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <h4 className="font-heading font-bold text-base text-foreground">Ask anything about this document</h4>
+                      <p className="text-xs text-muted-foreground max-w-xs mx-auto leading-relaxed">
+                        Get AI answers grounded in this material, with exact [Page X] citations you can jump to.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-2 max-w-sm">
+                      {[
+                        document.fileType === 'YouTube Video'
+                          ? `Summarize the segment at ${Math.max(1, (currentPage - 1) * 3)}:00`
+                          : `Summarize page ${currentPage}`,
+                        'Explain the key concepts',
+                        'Quiz me on what I just read',
+                        'What are the main takeaways?',
+                      ].map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => handleSendChat(p)}
+                          className="px-3 py-1.5 rounded-full border border-border bg-background text-[11px] font-medium text-muted-foreground hover:border-primary/40 hover:text-primary transition"
+                        >
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
                 <div className="flex-1 overflow-y-auto space-y-4 pr-2 mb-4 min-h-[320px]">
                   {chatMessages.map((msg) => (
                     <div
@@ -664,12 +782,27 @@ export function DocumentReader({
                         className={cn(
                           'max-w-[88%] rounded-2xl px-4 py-3 text-xs sm:text-sm leading-relaxed shadow-sm whitespace-pre-wrap',
                           msg.sender === 'user'
-                            ? 'bg-foreground text-background rounded-br-none font-medium'
+                            ? 'bg-primary text-primary-foreground rounded-br-none font-medium'
                             : 'bg-background border border-border text-foreground rounded-bl-none'
                         )}
                       >
-                        {msg.text}
+                        {msg.sender === 'ai' ? renderAiMessageText(msg.text) : msg.text}
                       </div>
+
+                      {msg.sender === 'ai' && msg.citations && msg.citations.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {msg.citations.map((c, i) => (
+                            <button
+                              key={`${c.page}-${i}`}
+                              onClick={() => jumpToPage(c.page)}
+                              className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-mono text-[10px] font-bold hover:bg-primary/20 transition"
+                              title={`Jump to Page ${c.page}`}
+                            >
+                              [Page {c.page}]
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
 
@@ -681,6 +814,7 @@ export function DocumentReader({
                     </div>
                   )}
                 </div>
+                )}
 
 
                 {/* Fixed Bottom Chat Input Bar */}
@@ -691,12 +825,12 @@ export function DocumentReader({
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
                     placeholder="Ask AI any question about this document..."
-                    className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-xs sm:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition"
+                    className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-xs sm:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary transition"
                   />
                   <Button
                     size="sm"
                     onClick={() => handleSendChat()}
-                    className="rounded-xl h-10 px-4 bg-foreground text-background hover:bg-foreground/90 gap-1.5 font-semibold shrink-0"
+                    className="rounded-xl h-10 px-4 bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 font-semibold shrink-0"
                   >
                     <span>Ask AI</span>
                     <Send className="w-3.5 h-3.5" />
@@ -717,7 +851,7 @@ export function DocumentReader({
                         Generate Custom Assessment Quiz
                       </h3>
                       <p className="text-xs sm:text-sm text-muted-foreground">
-                        Test active recall and identify weak knowledge gaps across all {document.totalPages} pages of this syllabus.
+                        Test active recall and identify weak knowledge gaps across the pages around your current position in this document.
                       </p>
                     </div>
 
@@ -734,7 +868,7 @@ export function DocumentReader({
                             className={cn(
                               'p-3 rounded-xl border text-center transition font-semibold text-xs',
                               quizDifficulty === diff
-                                ? 'border-foreground bg-foreground text-background shadow-sm'
+                                ? 'border-primary bg-primary text-primary-foreground shadow-sm'
                                 : 'border-border bg-background hover:bg-muted/50 text-foreground'
                             )}
                           >
@@ -758,7 +892,7 @@ export function DocumentReader({
                               className={cn(
                                 'flex-1 py-2.5 rounded-xl border text-center text-xs font-semibold transition',
                                 quizQuestionCount === count
-                                  ? 'border-foreground bg-foreground text-background'
+                                  ? 'border-primary bg-primary text-primary-foreground'
                                   : 'border-border bg-background hover:bg-muted/50 text-foreground'
                               )}
                             >
@@ -774,8 +908,8 @@ export function DocumentReader({
                         </label>
                         <select
                           value={quizType}
-                          onChange={(e) => setQuizType(e.target.value as any)}
-                          className="w-full h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold text-foreground focus:outline-none"
+                          onChange={(e) => setQuizType(e.target.value as QuizType)}
+                          className="w-full h-10 rounded-xl border border-border bg-background px-3 text-xs font-semibold text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                         >
                           <option value="MCQ">Multiple Choice (MCQ)</option>
                           <option value="True/False">True / False Statements</option>
@@ -790,7 +924,7 @@ export function DocumentReader({
                       <Button
                         onClick={handleLaunchQuiz}
                         disabled={isGeneratingQuiz}
-                        className="w-full h-11 rounded-xl bg-foreground text-background hover:bg-foreground/90 font-heading font-bold text-sm gap-2 shadow-md"
+                        className="w-full h-11 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-bold text-sm gap-2 shadow-md"
                       >
                         {isGeneratingQuiz ? (
                           <>
@@ -799,7 +933,7 @@ export function DocumentReader({
                           </>
                         ) : (
                           <>
-                            <HelpCircle className="w-4 h-4 text-amber-400" />
+                            <HelpCircle className="w-4 h-4 text-primary-foreground/80" />
                             <span>Launch {quizDifficulty} Assessment ({quizQuestionCount} Questions)</span>
                           </>
                         )}
@@ -814,7 +948,7 @@ export function DocumentReader({
                     {/* Top Quiz Progress & Timer */}
                     <div className="flex items-center justify-between pb-3 border-b border-border text-xs font-mono">
                       <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-1 rounded bg-foreground text-background font-bold">
+                        <span className="px-2.5 py-1 rounded bg-primary text-primary-foreground font-bold">
                           Question {currentQuestionIdx + 1} of {currentQuizPool.length}
                         </span>
                         <span className="text-muted-foreground">Level: {quizDifficulty}</span>
@@ -859,7 +993,7 @@ export function DocumentReader({
                             className={cn(
                               'w-full p-4 rounded-xl border text-left transition-all flex items-center justify-between text-xs sm:text-sm font-medium',
                               isChosen
-                                ? 'border-foreground bg-foreground text-background shadow-sm font-semibold pl-6'
+                                ? 'border-primary bg-primary text-primary-foreground shadow-sm font-semibold pl-6'
                                 : 'border-border/80 bg-background hover:bg-muted/40 text-foreground'
                             )}
                           >
@@ -884,7 +1018,7 @@ export function DocumentReader({
                         size="sm"
                         disabled={selectedAnswer === null}
                         onClick={handleNextQuestion}
-                        className="rounded-xl bg-foreground text-background hover:bg-foreground/90 font-semibold px-6 text-xs h-9"
+                        className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-semibold px-6 text-xs h-9"
                       >
                         <span>
                           {currentQuestionIdx + 1 < currentQuizPool.length ? 'Next Question →' : 'Submit Final Answers'}
@@ -931,8 +1065,8 @@ export function DocumentReader({
                     </div>
 
                     {/* Weak Topic & Recommendation Box */}
-                    <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 text-left space-y-2 max-w-md mx-auto">
-                      <div className="text-xs font-mono font-bold text-amber-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <div className="p-4 rounded-xl border border-primary/20 bg-primary/[0.04] text-left space-y-2 max-w-md mx-auto">
+                      <div className="text-xs font-mono font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
                         <AlertCircle className="w-3.5 h-3.5" /> Weak Topic Recommendations
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed">
@@ -947,13 +1081,9 @@ export function DocumentReader({
                       >
                         <RotateCcw className="w-3.5 h-3.5" /> Retake Assessment
                       </Button>
-                      <Button
-                        size="sm"
-                        onClick={onClose}
-                        className="rounded-xl bg-foreground text-background hover:bg-foreground/90 font-semibold text-xs px-6"
-                      >
-                        Finish & Return
-                      </Button>
+                      <p className="text-[10px] text-muted-foreground font-mono">
+                        Close the reader with the ✕ or Back button when you&apos;re done.
+                      </p>
                     </div>
                     </div>
                   </div>
@@ -978,7 +1108,7 @@ export function DocumentReader({
                   <Button
                     onClick={handleGenerateFlashcards}
                     disabled={isGeneratingFlashcards}
-                    className="w-full h-11 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 font-heading font-bold text-sm gap-2 shadow-md"
+                    className="w-full h-11 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-heading font-bold text-sm gap-2 shadow-md"
                   >
                     {isGeneratingFlashcards ? (
                       <>
@@ -999,7 +1129,7 @@ export function DocumentReader({
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Powered by SM-2 Algorithm
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Once generated, flashcards are added to your global <strong>Daily Review</strong> queue. Our engine uses the SuperMemo-2 algorithm to show you cards right before you're about to forget them, committing them to long-term memory.
+                    Once generated, flashcards are added to your global <strong>Daily Review</strong> queue. Our engine uses the SuperMemo-2 algorithm to show you cards right before you&apos;re about to forget them, committing them to long-term memory.
                   </p>
                 </div>
               </div>
@@ -1050,7 +1180,7 @@ export function DocumentReader({
                       setNotesSaveStatus('Unsaved changes...')
                     }}
                     placeholder="Write your study notes, formulas, or copy AI takeaways here..."
-                    className="w-full flex-1 bg-background border border-border rounded-xl p-4 text-xs sm:text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition leading-relaxed resize-none shadow-inner"
+                    className="w-full flex-1 bg-background border border-border rounded-xl p-4 text-xs sm:text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary transition leading-relaxed resize-none shadow-inner"
                   />
                 </div>
 

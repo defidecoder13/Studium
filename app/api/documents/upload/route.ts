@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { saveStoredDocument, StoredDocument, PageChunk } from '@/lib/documents-store'
 import { uploadFile } from '@/lib/storage-adapter'
-
-const pdfParse = require('pdf-parse')
+import { getCurrentUserId } from '@/lib/auth'
+import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
+import { getErrorMessage } from '@/lib/utils'
+import pdfParse from 'pdf-parse'
+import { headers } from 'next/headers'
 
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { allowed, retryAfterSec } = checkRateLimit(`ingest:${userId}`, 10, 60_000)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
     const formData = await req.formData()
     const file = formData.get('file') as File | null
     const folder = (formData.get('folder') as string) || 'General'
@@ -14,13 +21,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
     }
 
+    // Only accept real PDFs: check the magic bytes (%PDF-) before pdf-parse runs.
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
+    // Vercel serverless body limit (~4.5 MB on Hobby) + 30s maxDuration for
+    // pdf-parse + per-page Gemini embeddings: reject oversized docs early
+    // with a clear 413 instead of a cryptic timeout.
+    const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
+    const MAX_PAGES = 50
+    if (buffer.length > MAX_FILE_BYTES) {
+      return NextResponse.json(
+        { error: 'File too large. Maximum PDF size is 10 MB. Please split the document and upload in parts.' },
+        { status: 413 }
+      )
+    }
+    const isPdf = buffer.length >= 5 && buffer.subarray(0, 5).toString('latin1') === '%PDF-'
+    if (!isPdf) {
+      return NextResponse.json(
+        { error: 'Unsupported file type. Please upload a PDF document (not a Word doc, image, or archive).' },
+        { status: 400 }
+      )
+    }
+
     // Capture text per page using custom pagerender function
     const pageTexts: string[] = []
-    
-    const renderPage = async (pageData: any) => {
+
+    interface PdfPageItem {
+      str: string
+      transform: number[]
+    }
+
+    const renderPage = async (pageData: { getTextContent: () => Promise<{ items: PdfPageItem[] }> }) => {
       const textContent = await pageData.getTextContent()
       let lastY = -1
       let text = ''
@@ -36,7 +68,6 @@ export async function POST(req: NextRequest) {
     }
 
     const parsed = await pdfParse(buffer, { pagerender: renderPage })
-    const totalPages = parsed.numpages || pageTexts.length || 1
 
     const pages: PageChunk[] = pageTexts.map((text, index) => ({
       pageNumber: index + 1,
@@ -58,10 +89,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (pages.length > MAX_PAGES) {
+      return NextResponse.json(
+        { error: `Document has ${pages.length} pages. Maximum is ${MAX_PAGES} pages per upload — please split the PDF and upload in parts.` },
+        { status: 413 }
+      )
+    }
+    if (pages.length === 0) {
+      return NextResponse.json(
+        { error: 'Could not extract any pages from this PDF. The file may be scanned images without selectable text.' },
+        { status: 422 }
+      )
+    }
+
     const docId = `doc-${Date.now()}`
     
     // Upload file to Object Storage (Cloudflare R2 or Local)
-    const mimeType = file.type || 'application/pdf'
+    const mimeType = 'application/pdf'
     const storageResult = await uploadFile(buffer, file.name, mimeType)
 
     const newDoc: StoredDocument = {
@@ -73,9 +117,10 @@ export async function POST(req: NextRequest) {
       folder,
       pages,
       fileUrl: storageResult.url, // Store the public R2/Local URL
+      fileSize: `${(buffer.length / (1024 * 1024)).toFixed(1)} MB`,
     }
 
-    await saveStoredDocument(newDoc)
+    await saveStoredDocument(newDoc, userId)
 
     return NextResponse.json({
       success: true,
@@ -88,8 +133,8 @@ export async function POST(req: NextRequest) {
         fileUrl: newDoc.fileUrl,
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error in PDF upload route:', error)
-    return NextResponse.json({ error: error.message || 'Failed to parse document' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to parse document') }, { status: 500 })
   }
 }

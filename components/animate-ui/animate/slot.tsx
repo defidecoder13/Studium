@@ -68,6 +68,8 @@ function Slot<T extends HTMLElement = HTMLElement>({
     children.type !== null &&
     isMotionComponent(children.type);
 
+  // Radix-slot pattern: the motion component must be derived from the
+  // dynamic child element type, so it is created once and memoized.
   const Base = React.useMemo(
     () =>
       isAlreadyMotion
@@ -83,6 +85,7 @@ function Slot<T extends HTMLElement = HTMLElement>({
   const mergedProps = mergeProps(childProps, props);
 
   return (
+    // eslint-disable-next-line react-hooks/static-components -- Base is a memoized motion component derived from the runtime child type
     <Base {...mergedProps} ref={mergeRefs(childRef as React.Ref<T>, ref)} />
   );
 }

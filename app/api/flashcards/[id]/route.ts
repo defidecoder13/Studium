@@ -1,25 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { auth } from '@/lib/auth'
+import { getCurrentUserId } from '@/lib/auth'
+import { getErrorMessage } from '@/lib/utils'
 import { headers } from 'next/headers'
 
-export async function PATCH(req: NextRequest, { params }: { params: any }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await auth.api.getSession({
-      headers: await headers()
-    }).catch(() => null)
-    
-    const userId = session?.user?.id || 'user-dummy-001'
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
     const { rating } = body // 'again', 'hard', 'medium', 'easy'
 
-    if (!rating) {
-      return NextResponse.json({ error: 'rating is required' }, { status: 400 })
+    const VALID_RATINGS = ['again', 'hard', 'medium', 'easy']
+    if (!rating || !VALID_RATINGS.includes(rating)) {
+      return NextResponse.json({ error: 'rating must be one of: again, hard, medium, easy' }, { status: 400 })
     }
 
-    const resolvedParams = await Promise.resolve(params)
-    const cardId = resolvedParams.id
+    const { id: cardId } = await params
 
     const card = await prisma.flashcard.findUnique({
       where: { id: cardId }
@@ -30,22 +28,30 @@ export async function PATCH(req: NextRequest, { params }: { params: any }) {
 
     let { interval, easeFactor, repetitionCount } = card
 
-    // SM-2 Spaced Repetition Algorithm
+    // Canonical SM-2 spaced repetition algorithm (Anki-compatible).
+    // Intervals grow 1 → 6 → I×EF for "good", and the ease factor adapts
+    // ±0.15 per review — it is what drives long-term interval growth.
+    const MIN_EASE = 1.3
+    const EASY_BONUS = 1.3
+
     if (rating === 'again') {
-      repetitionCount = 0
-      interval = 0 // Due immediately or same day
-      easeFactor = Math.max(1.3, easeFactor - 0.25)
-    } else if (rating === 'hard') {
+      // Failed: restart the learning sequence; ease drops 0.20 (floor 1.3).
       repetitionCount = 0
       interval = 1
-      easeFactor = Math.max(1.3, easeFactor - 0.15)
+      easeFactor = Math.max(MIN_EASE, easeFactor - 0.2)
+    } else if (rating === 'hard') {
+      // Passed but struggled: 1.2× interval, ease drops 0.15.
+      // Hard is still a successful review, so repetition is NOT reset.
+      interval = Math.max(1, Math.round(interval * 1.2))
+      easeFactor = Math.max(MIN_EASE, easeFactor - 0.15)
     } else if (rating === 'medium') {
-      interval = repetitionCount === 0 ? 1 : repetitionCount === 1 ? 3 : Math.round(interval * 1.5)
-      easeFactor = Math.max(1.3, easeFactor - 0.1)
+      // Classic SM-2 "good": 1 day → 6 days → I × EF. Ease unchanged.
+      interval = repetitionCount === 0 ? 1 : repetitionCount === 1 ? 6 : Math.round(interval * easeFactor)
       repetitionCount += 1
     } else if (rating === 'easy') {
-      interval = repetitionCount === 0 ? 1 : repetitionCount === 1 ? 4 : Math.round(interval * easeFactor)
-      easeFactor = easeFactor + 0.15
+      // Fast progression: 4 → 7 → I × EF × easy bonus. Ease rises 0.15.
+      interval = repetitionCount === 0 ? 4 : repetitionCount === 1 ? 7 : Math.round(interval * easeFactor * EASY_BONUS)
+      easeFactor = Math.min(3, easeFactor + 0.15) // Anki caps ease at 3.0
       repetitionCount += 1
     }
 
@@ -64,8 +70,8 @@ export async function PATCH(req: NextRequest, { params }: { params: any }) {
     })
 
     return NextResponse.json({ success: true, card: updatedCard })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error updating flashcard:', error)
-    return NextResponse.json({ error: error.message || 'Failed to update flashcard' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to update flashcard') }, { status: 500 })
   }
 }

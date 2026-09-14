@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { getCurrentUser } from '@/lib/auth'
+import { getCurrentUserId } from '@/lib/auth'
+import { getErrorMessage } from '@/lib/utils'
 import { headers } from 'next/headers'
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const user = await getCurrentUser(await headers()).catch(() => null)
-    const userId = user?.id || 'user-dummy-001'
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       
     const quizzes = await prisma.quizAttempt.findMany({
       where: { userId },
@@ -22,16 +23,16 @@ export async function GET(req: NextRequest) {
       }
     })
     return NextResponse.json({ success: true, quizzes })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching quiz history:', error)
-    return NextResponse.json({ error: error.message || 'Failed to fetch quizzes' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to fetch quizzes') }, { status: 500 })
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser(await headers()).catch(() => null)
-    const userId = user?.id || 'user-dummy-001'
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
     const {
@@ -70,16 +71,16 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ success: true, quiz: newQuiz })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error saving quiz attempt:', error)
-    return NextResponse.json({ error: error.message || 'Failed to save quiz attempt' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to save quiz attempt') }, { status: 500 })
   }
 }
 
 export async function DELETE(req: NextRequest) {
   try {
-    const user = await getCurrentUser(await headers()).catch(() => null)
-    const userId = user?.id || 'user-dummy-001'
+    const userId = await getCurrentUserId(await headers())
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
@@ -94,8 +95,8 @@ export async function DELETE(req: NextRequest) {
 
     await prisma.quizAttempt.delete({ where: { id } })
     return NextResponse.json({ success: true, message: 'Quiz attempt deleted' })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error deleting quiz attempt:', error)
-    return NextResponse.json({ error: error.message || 'Failed to delete attempt' }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, 'Failed to delete attempt') }, { status: 500 })
   }
 }

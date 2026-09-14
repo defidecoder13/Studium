@@ -2,21 +2,35 @@
 
 import { Suspense, useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Layers, ArrowLeft, CheckCircle2, RotateCcw } from 'lucide-react'
+import { Layers, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+
+interface DueFlashcard {
+  id: string
+  front: string
+  back: string
+  pageRef?: number | null
+  nextReviewDate: string
+  deck?: {
+    name: string
+    document?: { fileType: string } | null
+  } | null
+}
 
 function DailyReviewContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const deckId = searchParams?.get('deckId')
 
-  const [cards, setCards] = useState<any[]>([])
+  const [cards, setCards] = useState<DueFlashcard[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
+    // Reset to loading state when the target deck changes without a remount
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoading(true)
     const url = deckId ? `/api/flashcards/due?deckId=${deckId}` : '/api/flashcards/due'
     fetch(url)
@@ -53,7 +67,7 @@ function DailyReviewContent() {
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
-        <div className="w-8 h-8 border-4 border-muted border-t-foreground rounded-full animate-spin" />
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
@@ -61,16 +75,16 @@ function DailyReviewContent() {
   if (currentIndex >= cards.length) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-6 text-center animate-in zoom-in-95 duration-500">
-        <div className="w-20 h-20 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center">
+        <div className="w-20 h-20 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center">
           <CheckCircle2 className="w-10 h-10" />
         </div>
         <div className="space-y-2 max-w-md">
-          <h2 className="text-3xl font-heading font-bold text-foreground">You're all caught up!</h2>
+          <h2 className="text-3xl font-heading font-bold text-foreground">You&apos;re all caught up!</h2>
           <p className="text-muted-foreground">
-            You've reviewed all your due flashcards for today. The SuperMemo-2 algorithm will schedule your next reviews to maximize long-term retention.
+            You&apos;ve reviewed all your due flashcards for today. The SuperMemo-2 algorithm will schedule your next reviews to maximize long-term retention.
           </p>
         </div>
-        <Button onClick={() => router.push('/app/dashboard')} className="h-12 px-8 rounded-xl font-bold bg-foreground text-background">
+        <Button onClick={() => router.push('/app/dashboard')} className="h-12 px-8 rounded-xl font-bold bg-primary text-primary-foreground">
           Return to Dashboard
         </Button>
       </div>
@@ -88,7 +102,7 @@ function DailyReviewContent() {
           </Button>
           <div className="h-5 w-px bg-border" />
           <div className="flex items-center gap-2 font-heading font-bold text-lg">
-            <Layers className="w-5 h-5 text-indigo-500" />
+            <Layers className="w-5 h-5 text-accent" />
             <span>Daily Review</span>
           </div>
         </div>
@@ -96,6 +110,14 @@ function DailyReviewContent() {
           Card {currentIndex + 1} of {cards.length}
         </div>
       </header>
+
+      {/* Session progress */}
+      <div className="h-1 bg-muted/40 shrink-0">
+        <div
+          className="h-full bg-primary transition-all duration-500"
+          style={{ width: `${((currentIndex + 1) / Math.max(cards.length, 1)) * 100}%` }}
+        />
+      </div>
 
       <main className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-2xl flex flex-col items-center gap-8">
@@ -113,10 +135,10 @@ function DailyReviewContent() {
               
               {/* FRONT */}
               <div 
-                className="absolute inset-0 bg-background border border-border rounded-3xl p-8 sm:p-12 flex flex-col justify-center items-center text-center"
+                className="absolute inset-0 bg-background border border-border rounded-3xl p-8 sm:p-12 flex flex-col justify-center items-center text-center overflow-hidden"
                 style={{ backfaceVisibility: 'hidden' }}
               >
-                <span className="absolute top-6 left-6 text-xs font-mono text-muted-foreground uppercase tracking-widest">
+                <span className="absolute top-6 left-6 text-xs font-mono text-accent/80 uppercase tracking-widest">
                   {card.deck?.name || 'Flashcard'}
                 </span>
                 <h3 className="text-2xl sm:text-4xl font-heading font-bold text-foreground leading-tight">
@@ -131,7 +153,7 @@ function DailyReviewContent() {
 
               {/* BACK */}
               <div 
-                className="absolute inset-0 bg-muted/30 border border-border rounded-3xl p-8 sm:p-12 flex flex-col justify-center items-center text-center"
+                className="absolute inset-0 bg-secondary/40 border border-border rounded-3xl p-8 sm:p-12 flex flex-col justify-center items-center text-center overflow-hidden"
                 style={{ backfaceVisibility: 'hidden', transform: 'rotateX(180deg)' }}
               >
                 <span className="absolute top-6 left-6 text-xs font-mono text-muted-foreground uppercase tracking-widest">
@@ -157,7 +179,7 @@ function DailyReviewContent() {
               <Button 
                 onClick={() => handleRate('again')} 
                 disabled={isSubmitting}
-                className="h-14 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 font-bold rounded-2xl border-b-4 border-slate-300 dark:border-slate-700 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
+                className="h-14 bg-muted hover:bg-muted/70 text-foreground font-bold rounded-2xl border-b-4 border-foreground/20 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
               >
                 <span>Again</span>
                 <span className="text-[10px] opacity-70 font-mono font-normal">&lt;10m</span>
@@ -165,7 +187,7 @@ function DailyReviewContent() {
               <Button 
                 onClick={() => handleRate('hard')} 
                 disabled={isSubmitting}
-                className="h-14 bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-950/30 dark:hover:bg-red-900/50 dark:text-red-400 font-bold rounded-2xl border-b-4 border-red-200 dark:border-red-900/30 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
+                className="h-14 bg-destructive/10 hover:bg-destructive/15 text-destructive font-bold rounded-2xl border-b-4 border-destructive/40 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
               >
                 <span>Hard</span>
                 <span className="text-[10px] opacity-70 font-mono font-normal">1d</span>
@@ -173,7 +195,7 @@ function DailyReviewContent() {
               <Button 
                 onClick={() => handleRate('medium')} 
                 disabled={isSubmitting}
-                className="h-14 bg-amber-100 hover:bg-amber-200 text-amber-700 dark:bg-amber-950/30 dark:hover:bg-amber-900/50 dark:text-amber-400 font-bold rounded-2xl border-b-4 border-amber-200 dark:border-amber-900/30 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
+                className="h-14 bg-primary/10 hover:bg-primary/15 text-primary font-bold rounded-2xl border-b-4 border-primary/40 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
               >
                 <span>Good</span>
                 <span className="text-[10px] opacity-70 font-mono font-normal">~3d</span>
@@ -181,7 +203,7 @@ function DailyReviewContent() {
               <Button 
                 onClick={() => handleRate('easy')} 
                 disabled={isSubmitting}
-                className="h-14 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/50 dark:text-emerald-400 font-bold rounded-2xl border-b-4 border-emerald-200 dark:border-emerald-900/30 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
+                className="h-14 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold rounded-2xl border-b-4 border-emerald-500/40 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
               >
                 <span>Easy</span>
                 <span className="text-[10px] opacity-70 font-mono font-normal">~4d+</span>
@@ -199,7 +221,7 @@ export default function DailyReviewPage() {
   return (
     <Suspense fallback={
       <div className="flex-1 flex items-center justify-center p-8 min-h-screen bg-muted/20">
-        <div className="w-8 h-8 border-4 border-muted border-t-foreground rounded-full animate-spin" />
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     }>
       <DailyReviewContent />

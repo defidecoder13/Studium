@@ -12,8 +12,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       contents: text,
     });
     
-    // The response has an 'embedding' object or 'embeddings' array depending on method.
-    return response.embedding?.values || response.embeddings?.[0]?.values || [];
+    // embedContent returns an `embeddings` array on the response.
+    return response.embeddings?.[0]?.values || [];
   } catch (error) {
     console.error('Error generating embedding:', error);
     return [];

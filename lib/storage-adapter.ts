@@ -1,5 +1,5 @@
-import { PutObjectCommand } from '@aws-sdk/client-s3'
-import { r2Client, R2_BUCKET_NAME, R2_PUBLIC_URL } from './r2'
+import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import { r2Client, R2_BUCKET_NAME } from './r2'
 import fs from 'fs'
 import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
@@ -59,5 +59,39 @@ export async function uploadFile(
       key: storageKey,
       sizeBytes,
     }
+  }
+}
+
+/**
+ * Extracts the storage key from a `/api/documents/file/[key]` URL.
+ * Returns null for external/missing URLs.
+ */
+export function extractKeyFromFileUrl(fileUrl?: string | null): string | null {
+  if (!fileUrl) return null
+  const marker = '/api/documents/file/'
+  const idx = fileUrl.indexOf(marker)
+  if (idx === -1) return null
+  const key = fileUrl.slice(idx + marker.length).split('?')[0]
+  // Guard against path traversal — keys are flat `timestamp-uuid-filename` strings.
+  if (!key || key.includes('/') || key.includes('..')) return null
+  return key
+}
+
+/**
+ * Deletes a stored file by key. Never throws — storage cleanup must not
+ * block DB deletion (orphan cleanup can be retried later).
+ */
+export async function deleteFile(storageKey: string): Promise<void> {
+  try {
+    if (USE_CLOUD_STORAGE) {
+      await r2Client.send(
+        new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: storageKey })
+      )
+    } else {
+      const filePath = path.join(process.cwd(), '.data', 'uploads', storageKey)
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    }
+  } catch (e) {
+    console.error('[storage] failed to delete file:', storageKey, e)
   }
 }

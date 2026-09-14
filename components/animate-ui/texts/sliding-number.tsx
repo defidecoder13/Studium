@@ -216,6 +216,9 @@ function SlidingNumber({
       });
       return () => unsubscribe();
     } else {
+      // Non-animated mode: derive the displayed number directly from the
+      // current in-view state (no spring subscription).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEffectiveNumber(
         initiallyStable ? initialNumeric : !isInView ? 0 : initialNumeric,
       );
@@ -252,6 +255,8 @@ function SlidingNumber({
     ? newIntStrRaw.padStart(finalIntLength, '0')
     : newIntStrRaw;
 
+  // Read the last committed number so rollers can animate from it.
+  // eslint-disable-next-line react-hooks/refs
   const prevFormatted = formatNumber(prevNumberRef.current);
   const [prevIntStrRaw = '', prevDecStrRaw = ''] = prevFormatted.split('.');
   const prevIntStr = padStart
