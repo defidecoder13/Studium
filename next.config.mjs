@@ -20,12 +20,12 @@ const nextConfig = {
     // Keep 'unsafe-inline'/'unsafe-eval' for Next.js + Clerk until fully nonced.
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.com https://*.clerk.dev https://*.clerk.accounts.dev",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.com https://*.clerk.dev https://*.clerk.accounts.dev https://challenges.cloudflare.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https:",
       "font-src 'self' https://fonts.gstatic.com data:",
-      "connect-src 'self' https://*.clerk.com https://*.clerk.dev https://*.clerk.accounts.dev https://*.googleapis.com https://*.gstatic.com https://*.r2.dev https://*.r2.cloudflarestorage.com https://www.youtube.com https://www.googleapis.com",
-      "frame-src 'self' https://www.youtube.com https://*.youtube-nocookie.com https://*.clerk.com https://*.clerk.dev https://*.clerk.accounts.dev",
+      "connect-src 'self' https://*.clerk.com https://*.clerk.dev https://*.clerk.accounts.dev https://*.googleapis.com https://*.gstatic.com https://*.r2.dev https://*.r2.cloudflarestorage.com https://www.youtube.com https://www.googleapis.com https://challenges.cloudflare.com",
+      "frame-src 'self' https://www.youtube.com https://*.youtube-nocookie.com https://*.clerk.com https://*.clerk.dev https://*.clerk.accounts.dev https://challenges.cloudflare.com",
       "worker-src 'self' blob:",
       "object-src 'none'",
       "base-uri 'self'",
