@@ -1,13 +1,16 @@
 import { PrismaClient } from '@prisma/client'
 import { Pool } from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { env } from './env'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-// Parse the connection string to suppress pg-connection-string v3 warnings
-const rawUrl = process.env.DATABASE_URL || ''
+// Single source of truth for validation: lib/env (throws in prod when
+// missing, so a bad deploy fails at boot, not on first query).
+// Parse the connection string to suppress pg-connection-string v3 warnings.
+const rawUrl = env.DATABASE_URL
 const connectionString = rawUrl.replace('sslmode=require', 'sslmode=require&uselibpqcompat=true')
 
 const pool = new Pool({

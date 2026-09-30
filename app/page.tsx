@@ -1,41 +1,18 @@
-'use client'
-
-import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, ArrowUpRight, ChevronDown, CalendarClock, FileText, Quote } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CalendarClock, FileText, Quote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Show, UserButton } from '@clerk/nextjs'
 import { ModernFeaturesSection } from '@/components/modern-features'
 import { StudiumLogo } from '@/components/ui/logo'
+import { LandingFaq } from '@/components/landing-faq'
 
 import { RippleButton } from '@/components/animate-ui/buttons/ripple'
 
 export default function LandingPage() {
-  const [expandedFaq, setExpandedFaq] = useState<number | null>(null)
-
-  const faqs = [
-    {
-      question: 'How does the AI understand my documents?',
-      answer: 'Our system uses advanced language models to analyze document structure and extract key concepts, generating accurate summaries and study materials.',
-    },
-    {
-      question: 'Can I use this for any subject?',
-      answer: 'Yes. Studium works across all domains—from literature to mathematics to sciences. The AI adapts to different types of content.',
-    },
-    {
-      question: 'Is my data secure?',
-      answer: 'Absolutely. All documents are encrypted end-to-end. We never store your data beyond your current session unless you explicitly choose to save.',
-    },
-    {
-      question: 'Can I export my study materials?',
-      answer: 'Yes. Export flashcards, summaries, and notes in multiple formats including PDF, Markdown, and popular flashcard apps.',
-    },
-  ]
-
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 backdrop-blur-xl bg-background/80 border-b border-border">
+      <nav aria-label="Primary" className="fixed top-0 w-full z-50 backdrop-blur-xl bg-background/80 border-b border-border">
         <div className="max-w-7xl mx-auto px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-black dark:bg-zinc-900 border border-zinc-800 flex items-center justify-center shadow-sm">
@@ -113,12 +90,12 @@ export default function LandingPage() {
             <div className="flex flex-wrap items-center gap-3 pt-6 border-t border-border font-mono text-[11px] tracking-wide">
               <span className="inline-flex items-center gap-2 text-muted-foreground">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                12.3M pages indexed
+                Page-grounded citations
               </span>
               <span className="text-border">·</span>
-              <span className="text-muted-foreground">847 theses traced to page</span>
+              <span className="text-muted-foreground">PDF + YouTube ingest</span>
               <span className="text-border">·</span>
-              <span className="text-muted-foreground">Last cite 3 min ago</span>
+              <span className="text-muted-foreground">Quizzes, flashcards & review</span>
             </div>
           </div>
 
@@ -287,25 +264,7 @@ export default function LandingPage() {
               <p className="text-sm text-muted-foreground">If it’s not on a page, we don’t claim it. A few specifics:</p>
             </div>
 
-            <div className="space-y-3">
-              {faqs.map((faq, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setExpandedFaq(expandedFaq === idx ? null : idx)}
-                  className="w-full text-left p-5 md:p-6 rounded-xl border border-border bg-background hover:border-foreground/15 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <h3 className="font-semibold text-foreground text-sm md:text-[15px]">{faq.question}</h3>
-                    <ChevronDown
-                      className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${expandedFaq === idx ? 'rotate-180' : ''}`}
-                    />
-                  </div>
-                  {expandedFaq === idx && (
-                    <p className="text-sm leading-relaxed text-muted-foreground mt-3 border-t border-border pt-3">{faq.answer}</p>
-                  )}
-                </button>
-              ))}
-            </div>
+            <LandingFaq />
           </div>
         </div>
       </section>

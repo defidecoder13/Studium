@@ -123,6 +123,7 @@ model Document {
   flashcardDecks FlashcardDeck[]
 
   @@index([userId, folder])
+  @@index([userId, uploadedAt])
 }
 
 model PageChunk {
@@ -151,6 +152,7 @@ model Bookmark {
   createdAt     DateTime @default(now())
 
   @@index([userId, documentId])
+  @@index([userId, createdAt])
 }
 
 model QuizAttempt {
@@ -170,6 +172,7 @@ model QuizAttempt {
   completedAt      DateTime @default(now())
 
   @@index([userId, documentId])
+  @@index([userId, completedAt])
 }
 
 model DocumentNote {
@@ -208,6 +211,7 @@ model FlashcardDeck {
   cards       Flashcard[]
 
   @@index([userId, documentId])
+  @@index([userId, createdAt])
 }
 
 model Flashcard {
@@ -229,6 +233,7 @@ model Flashcard {
   createdAt       DateTime       @default(now())
 
   @@index([deckId, nextReviewDate])
+  @@index([userId, nextReviewDate])
 }
 
 model StudyPlan {

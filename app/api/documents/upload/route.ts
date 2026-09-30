@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { saveStoredDocument, StoredDocument, PageChunk } from '@/lib/documents-store'
 import { uploadFile } from '@/lib/storage-adapter'
 import { getCurrentUserId } from '@/lib/auth'
-import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
+import { checkRateLimitWithIp, rateLimitedResponse, RATE_PRESETS } from '@/lib/rate-limit'
 import { getErrorMessage } from '@/lib/utils'
 import pdfParse from 'pdf-parse'
 import { headers } from 'next/headers'
@@ -11,11 +11,12 @@ export async function POST(req: NextRequest) {
   try {
     const userId = await getCurrentUserId(await headers())
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const { allowed, retryAfterSec } = checkRateLimit(`ingest:${userId}`, 10, 60_000)
+    const { allowed, retryAfterSec } = await checkRateLimitWithIp(req, `ingest:${userId}`, RATE_PRESETS.ingest.limit, RATE_PRESETS.ingest.windowMs, RATE_PRESETS.ingest.ipLimit)
     if (!allowed) return rateLimitedResponse(retryAfterSec)
     const formData = await req.formData()
     const file = formData.get('file') as File | null
-    const folder = (formData.get('folder') as string) || 'General'
+    const rawFolder = formData.get('folder')
+    const folder = (typeof rawFolder === 'string' ? rawFolder : 'General').slice(0, 80) || 'General'
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
@@ -28,11 +29,13 @@ export async function POST(req: NextRequest) {
     // Vercel serverless body limit (~4.5 MB on Hobby) + 30s maxDuration for
     // pdf-parse + per-page Gemini embeddings: reject oversized docs early
     // with a clear 413 instead of a cryptic timeout.
-    const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
+    // Override with MAX_UPLOAD_BYTES if on Pro (e.g. 10485760 for 10 MB).
+    const MAX_FILE_BYTES = Number(process.env.MAX_UPLOAD_BYTES) || 4_500_000 // 4.5 MB (Vercel Hobby)
     const MAX_PAGES = 50
     if (buffer.length > MAX_FILE_BYTES) {
+      const maxMb = (MAX_FILE_BYTES / (1024 * 1024)).toFixed(1)
       return NextResponse.json(
-        { error: 'File too large. Maximum PDF size is 10 MB. Please split the document and upload in parts.' },
+        { error: `File too large. Maximum PDF size is ${maxMb} MB on this plan. Please split the document and upload in parts.` },
         { status: 413 }
       )
     }
@@ -102,7 +105,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const docId = `doc-${Date.now()}`
+    const docId = `doc-${crypto.randomUUID()}`
     
     // Upload file to Object Storage (Cloudflare R2 or Local)
     const mimeType = 'application/pdf'
@@ -110,7 +113,7 @@ export async function POST(req: NextRequest) {
 
     const newDoc: StoredDocument = {
       id: docId,
-      title: file.name,
+      title: file.name.slice(0, 200),
       fileType: 'PDF Textbook',
       totalPages: pages.length,
       uploadedAt: new Date().toISOString(),

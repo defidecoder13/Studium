@@ -2,7 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getCurrentUser, DEMO_USER_EMAIL } from '@/lib/auth'
 import { getErrorMessage } from '@/lib/utils'
+import { checkRateLimitWithIp, rateLimitedResponse, RATE_PRESETS } from '@/lib/rate-limit'
 import { headers } from 'next/headers'
+
+const THEMES = ['light', 'dark', 'system'] as const
+const SUMMARY_MODES = ['quick', 'detailed'] as const
+// Canonical vocabulary sent by the settings UI
+// (app/app/settings/page.tsx citationStrictness select).
+const CITATIONS = ['exact', 'flexible'] as const
+
+function cleanStr(v: unknown, max: number): string | undefined {
+  return typeof v === 'string' ? v.slice(0, max) : undefined
+}
 
 const DEFAULT_SETTINGS = {
   fullName: 'Alex Rivera',
@@ -19,10 +30,12 @@ const DEFAULT_SETTINGS = {
   citationStrictness: 'exact' as const,
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const user = await getCurrentUser(await headers())
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { allowed, retryAfterSec } = await checkRateLimitWithIp(req, `read:${user.id}`, RATE_PRESETS.read.limit, RATE_PRESETS.read.windowMs, RATE_PRESETS.read.ipLimit)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
 
     const record = await prisma.userSettings.findUnique({
       where: { userId: user.id },
@@ -54,16 +67,28 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser(await headers())
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { allowed, retryAfterSec } = await checkRateLimitWithIp(req, `write:settings:${user.id}`, RATE_PRESETS.write.limit, RATE_PRESETS.write.windowMs, RATE_PRESETS.write.ipLimit)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
 
     const body = await req.json()
+
+    if (body.themePreference !== undefined && !(THEMES as readonly string[]).includes(body.themePreference)) {
+      return NextResponse.json({ error: 'Invalid themePreference' }, { status: 400 })
+    }
+    if (body.defaultSummaryMode !== undefined && !(SUMMARY_MODES as readonly string[]).includes(body.defaultSummaryMode)) {
+      return NextResponse.json({ error: 'Invalid defaultSummaryMode' }, { status: 400 })
+    }
+    if (body.citationStrictness !== undefined && !(CITATIONS as readonly string[]).includes(body.citationStrictness)) {
+      return NextResponse.json({ error: 'Invalid citationStrictness' }, { status: 400 })
+    }
 
     const updated = await prisma.userSettings.upsert({
       where: { userId: user.id },
       update: {
-        fullName: typeof body.fullName === 'string' ? body.fullName : undefined,
-        institution: typeof body.institution === 'string' ? body.institution : undefined,
-        major: typeof body.major === 'string' ? body.major : undefined,
-        bio: typeof body.bio === 'string' ? body.bio : undefined,
+        fullName: cleanStr(body.fullName, 120),
+        institution: cleanStr(body.institution, 160),
+        major: cleanStr(body.major, 160),
+        bio: cleanStr(body.bio, 2000),
         twoFactor: typeof body.twoFactor === 'boolean' ? body.twoFactor : undefined,
         notifyQuizReminders: typeof body.notifyQuizReminders === 'boolean' ? body.notifyQuizReminders : undefined,
         notifyDailySummary: typeof body.notifyDailySummary === 'boolean' ? body.notifyDailySummary : undefined,
@@ -74,10 +99,10 @@ export async function POST(req: NextRequest) {
       },
       create: {
         userId: user.id,
-        fullName: body.fullName,
-        institution: body.institution,
-        major: body.major,
-        bio: body.bio,
+        fullName: cleanStr(body.fullName, 120),
+        institution: cleanStr(body.institution, 160),
+        major: cleanStr(body.major, 160),
+        bio: cleanStr(body.bio, 2000),
         twoFactor: body.twoFactor,
         notifyQuizReminders: body.notifyQuizReminders,
         notifyDailySummary: body.notifyDailySummary,

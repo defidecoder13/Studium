@@ -62,18 +62,21 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
 
-  // Auto-collapse on small screens
+  // Auto-collapse on small screens (debounced — was: setState per pixel)
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
     const handleResize = () => {
-      if (window.innerWidth < 1024) {
-        setIsCollapsed(true)
-      } else {
-        setIsCollapsed(false)
-      }
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        setIsCollapsed(window.innerWidth < 1024)
+      }, 150)
     }
     handleResize()
     window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', handleResize)
+    }
   }, [])
 
   const router = useRouter()

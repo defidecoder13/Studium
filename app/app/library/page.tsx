@@ -72,17 +72,24 @@ export default function LibraryPage() {
     const q = searchQuery.trim()
     if (q.length < 2) return
 
+    const ctrl = new AbortController()
     const timer = setTimeout(() => {
       setIsSearchingGlobal(true)
-      fetch(`/api/search?q=${encodeURIComponent(q)}`)
+      fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
         .then((res) => res.json())
         .then((data) => {
           setGlobalSearchResults(data.results && Array.isArray(data.results) ? data.results : [])
         })
-        .catch((e) => console.warn('Search API error:', e))
+        .catch((e) => {
+          if (e instanceof DOMException && e.name === 'AbortError') return
+          console.warn('Search API error:', e)
+        })
         .finally(() => setIsSearchingGlobal(false))
     }, 300)
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      ctrl.abort()
+    }
   }, [searchQuery])
   
   // Document Reader Overlay State
@@ -114,7 +121,8 @@ export default function LibraryPage() {
   ]
 
   useEffect(() => {
-    fetch('/api/documents')
+    const ctrl = new AbortController()
+    fetch('/api/documents?take=100', { signal: ctrl.signal })
       .then((res) => res.json())
       .then((data) => {
         if (data.documents && Array.isArray(data.documents)) {
@@ -138,8 +146,12 @@ export default function LibraryPage() {
           })
         }
       })
-      .catch((e) => console.warn('Could not load real documents:', e))
+      .catch((e) => {
+        if (e instanceof DOMException && e.name === 'AbortError') return
+        console.warn('Could not load real documents:', e)
+      })
       .finally(() => setIsLoadingDocs(false))
+    return () => ctrl.abort()
   }, [])
 
   const handleToggleFavorite = (e: React.MouseEvent, docId: string) => {
@@ -671,7 +683,7 @@ export default function LibraryPage() {
                     <div className="text-xs text-muted-foreground">or click to browse from your computer</div>
                   </div>
                   <div className="text-[11px] font-mono text-muted-foreground pt-1">
-                    Maximum file size: 50 MB
+                    Maximum file size: 4.5 MB · up to 50 pages
                   </div>
                 </div>
               )}

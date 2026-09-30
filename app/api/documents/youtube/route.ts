@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { saveStoredDocument, StoredDocument, PageChunk } from '@/lib/documents-store'
 import { getCurrentUserId } from '@/lib/auth'
-import { checkRateLimit, rateLimitedResponse } from '@/lib/rate-limit'
+import { checkRateLimitWithIp, rateLimitedResponse, RATE_PRESETS } from '@/lib/rate-limit'
 import { getErrorMessage } from '@/lib/utils'
 import { headers } from 'next/headers'
 
@@ -16,13 +16,14 @@ export async function POST(req: NextRequest) {
   try {
     const userId = await getCurrentUserId(await headers())
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const { allowed, retryAfterSec } = checkRateLimit(`ingest:${userId}`, 10, 60_000)
+    const { allowed, retryAfterSec } = await checkRateLimitWithIp(req, `ingest:${userId}`, RATE_PRESETS.ingest.limit, RATE_PRESETS.ingest.windowMs, RATE_PRESETS.ingest.ipLimit)
     if (!allowed) return rateLimitedResponse(retryAfterSec)
     const { url, title, folder = 'General' } = await req.json()
 
-    if (!url) {
+    if (typeof url !== 'string' || url.length > 500) {
       return NextResponse.json({ error: 'YouTube URL is required' }, { status: 400 })
     }
+    const safeFolder = (typeof folder === 'string' ? folder : 'General').slice(0, 80) || 'General'
 
     const videoId = extractVideoId(url)
     if (!videoId) {
@@ -83,18 +84,18 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    const docId = `doc-${Date.now()}`
+    const docId = `doc-${crypto.randomUUID()}`
     
     // We store the youtube embed URL in fileUrl
     const embedUrl = `https://www.youtube.com/embed/${videoId}?enablejsapi=1`
 
     const newDoc: StoredDocument = {
       id: docId,
-      title: title || `YouTube Video (${videoId})`,
+      title: (typeof title === 'string' && title.trim() ? title : `YouTube Video (${videoId})`).slice(0, 200),
       fileType: 'YouTube Video',
       totalPages: pages.length || 1,
       uploadedAt: new Date().toISOString(),
-      folder,
+      folder: safeFolder,
       pages,
       fileUrl: embedUrl,
       fileSize: 'Video',

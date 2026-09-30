@@ -150,7 +150,7 @@ export default function SettingsPage() {
     if (!confirm('This will permanently delete ALL documents, bookmarks, quizzes, and flashcards from your library. Continue?')) return
     setIsClearingDocs(true)
     try {
-      const res = await fetch('/api/documents?all=true', { method: 'DELETE' })
+      const res = await fetch('/api/documents?all=true&confirm=DELETE', { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to clear documents')
       setSaveStatus('All documents and study data cleared.')
     } catch {
@@ -166,7 +166,7 @@ export default function SettingsPage() {
     if (!confirm('Last chance — are you absolutely sure? There is no recovery.')) return
     setIsDeletingAccount(true)
     try {
-      const res = await fetch('/api/account', { method: 'DELETE' })
+      const res = await fetch('/api/account?confirm=DELETE', { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete account')
       await signOut()
       router.push('/')

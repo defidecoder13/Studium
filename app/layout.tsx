@@ -27,9 +27,23 @@ const jetBrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://studium.vercel.app'),
   title: 'Studium — Precision Learning Platform',
   description: 'Drop the PDF. Keep every citation. Summaries, quizzes and flashcards with page-level provenance.',
   keywords: 'study, learning, AI, citations, flashcards, spaced repetition, education',
+  alternates: { canonical: '/' },
+  openGraph: {
+    type: 'website',
+    siteName: 'Studium',
+    title: 'Studium — Precision Learning Platform',
+    description: 'Drop the PDF. Keep every citation. Summaries, quizzes and flashcards with page-level provenance.',
+    url: '/',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Studium — Precision Learning Platform',
+    description: 'Drop the PDF. Keep every citation. Summaries, quizzes and flashcards with page-level provenance.',
+  },
   icons: {
     icon: [
       {

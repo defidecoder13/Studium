@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import path from 'path'
 import fs from 'fs'
-import { r2Client, R2_BUCKET_NAME } from '@/lib/r2'
-import { USE_CLOUD_STORAGE } from '@/lib/storage-adapter'
+import { getR2Client, R2_BUCKET_NAME } from '@/lib/r2'
+import { USE_CLOUD_STORAGE, extractKeyFromFileUrl } from '@/lib/storage-adapter'
 import { getErrorMessage } from '@/lib/utils'
+import { checkRateLimitWithIp, rateLimitedResponse, RATE_PRESETS } from '@/lib/rate-limit'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
 import prisma from '@/lib/db'
 import { getCurrentUserId } from '@/lib/auth'
 import { headers } from 'next/headers'
+
+function sanitizeFilename(key: string): string {
+  // Prevent Content-Disposition header injection (CRLF / quotes).
+  return key.replace(/[\r\n"]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 180) || 'document.pdf'
+}
 
 export async function GET(
   req: NextRequest,
@@ -26,16 +32,26 @@ export async function GET(
     if (!userId) {
       return new NextResponse('Unauthorized', { status: 401 })
     }
-    const ownedDoc = await prisma.document.findFirst({
-      where: { userId, fileUrl: { contains: `/api/documents/file/${key}` } },
-      select: { id: true },
+    const rl = await checkRateLimitWithIp(req, `heavy:${userId}`, RATE_PRESETS.heavy.limit, RATE_PRESETS.heavy.windowMs, RATE_PRESETS.heavy.ipLimit)
+    if (!rl.allowed) return rateLimitedResponse(rl.retryAfterSec)
+    // Strict key validation: flat `timestamp-uuid-filename` strings only.
+    if (key.includes('/') || key.includes('..') || key.includes('\0') || key.length > 220) {
+      return new NextResponse('Invalid key', { status: 400 })
+    }
+    // Exact-match ownership: compare extracted storage keys in JS instead of
+    // `contains` (%LIKE%) semantics that allow partial-key matches.
+    const userDocs = await prisma.document.findMany({
+      where: { userId },
+      select: { fileUrl: true },
     })
-    if (!ownedDoc) {
+    const owned = userDocs.some((d) => extractKeyFromFileUrl(d.fileUrl) === key)
+    if (!owned) {
       return new NextResponse('Forbidden', { status: 403 })
     }
 
+    const safeFilename = sanitizeFilename(key)
     if (USE_CLOUD_STORAGE) {
-      const result = await r2Client.send(
+      const result = await getR2Client().send(
         new GetObjectCommand({
           Bucket: R2_BUCKET_NAME,
           Key: key,
@@ -52,11 +68,17 @@ export async function GET(
         status: 200,
         headers: {
           'Content-Type': result.ContentType || 'application/pdf',
-          'Content-Disposition': `inline; filename="${key}"`,
+          'Content-Disposition': `inline; filename="${safeFilename}"`,
+          'Cache-Control': 'private, max-age=3600, stale-while-revalidate=600',
         },
       })
     } else {
-      const filePath = path.join(process.cwd(), '.data', 'uploads', key)
+      const base = path.join(process.cwd(), '.data', 'uploads')
+      const filePath = path.join(base, key)
+      // Traversal guard: resolved path must stay inside the uploads dir.
+      if (!filePath.startsWith(base + path.sep)) {
+        return new NextResponse('Invalid key', { status: 400 })
+      }
 
       if (!fs.existsSync(filePath)) {
         return new NextResponse('File not found', { status: 404 })
@@ -68,7 +90,7 @@ export async function GET(
         status: 200,
         headers: {
           'Content-Type': 'application/pdf',
-          'Content-Disposition': `inline; filename="${key}"`,
+          'Content-Disposition': `inline; filename="${safeFilename}"`,
         },
       })
     }

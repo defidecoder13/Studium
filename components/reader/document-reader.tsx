@@ -5,7 +5,7 @@ import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+pdfjs.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`
 
 import {
   X,
@@ -83,43 +83,53 @@ export function DocumentReader({
   const pdfContainerRef = useRef<HTMLDivElement>(null)
   const [pdfNumPages, setPdfNumPages] = useState<number>(document.totalPages || 1)
   const [pdfWidth, setPdfWidth] = useState<number>(600)
+  const currentPageRef = useRef(currentPage)
+  useEffect(() => {
+    currentPageRef.current = currentPage
+  }, [currentPage])
 
-  // Track scroll and sync page
+  // Track scroll and sync page. Observer + resize set up once (was: recreated
+  // on every page change + 1.5s polling interval). Re-observe when page count
+  // or window changes via the windowed renderer.
   useEffect(() => {
     if (!pdfContainerRef.current) return
+    const container = pdfContainerRef.current
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting && entry.intersectionRatio > 0.4) {
             const pageNum = Number(entry.target.getAttribute('data-page-number'))
-            if (pageNum && pageNum !== currentPage) {
+            if (pageNum && pageNum !== currentPageRef.current) {
               setCurrentPage(pageNum)
             }
           }
         })
       },
-      { threshold: 0.4, root: pdfContainerRef.current }
+      { threshold: 0.4, root: container }
     )
 
-    const checkAndObserve = () => {
-      if (!pdfContainerRef.current) return
-      const elements = pdfContainerRef.current.querySelectorAll('.pdf-page-container')
-      elements.forEach(el => observer.observe(el))
+    const observeAll = () => {
+      const elements = container.querySelectorAll('.pdf-page-container')
+      elements.forEach((el) => observer.observe(el))
     }
-    const interval = setInterval(checkAndObserve, 1500)
-    
+    observeAll()
+
+    let resizeTimer: ReturnType<typeof setTimeout>
     const handleResize = () => {
-      if (pdfContainerRef.current) setPdfWidth(pdfContainerRef.current.clientWidth - 40)
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        if (pdfContainerRef.current) setPdfWidth(pdfContainerRef.current.clientWidth - 40)
+      }, 150)
     }
     window.addEventListener('resize', handleResize)
     handleResize()
-    
+
     return () => {
-      clearInterval(interval)
+      clearTimeout(resizeTimer)
       window.removeEventListener('resize', handleResize)
       observer.disconnect()
     }
-  }, [currentPage])
+  }, [pdfNumPages])
 
   const jumpToPage = (num: number) => {
     const maxPage = pdfNumPages || document.totalPages || 1
@@ -278,6 +288,7 @@ export function DocumentReader({
       .then((res) => res.json())
       .then((data) => {
         if (data && data.note) {
+          notesLoadedValue.current = data.note
           setUserNotes(data.note)
           setNotesSaveStatus('Loaded saved notes')
         }
@@ -295,8 +306,18 @@ export function DocumentReader({
       .catch((e) => console.warn('Could not load chat messages:', e))
   }, [document.id])
 
-  // Auto-save study notes on edit with debounce
+  // Auto-save study notes on edit with debounce.
+  // Skip the initial mount (was: POST '' on open, wiping nothing but
+  // writing a spurious empty note + racing the load above).
+  const notesFirstRender = useRef(true)
+  const notesLoadedValue = useRef<string | null>(null)
   useEffect(() => {
+    if (notesFirstRender.current) {
+      notesFirstRender.current = false
+      return
+    }
+    // Don't echo back the just-loaded value as a "new edit".
+    if (notesLoadedValue.current !== null && userNotes === notesLoadedValue.current) return
     const timer = setTimeout(() => {
       fetch(`/api/documents/${document.id}/notes`, {
         method: 'POST',
@@ -310,8 +331,13 @@ export function DocumentReader({
     return () => clearTimeout(timer)
   }, [userNotes, document.id])
 
-  // Auto-save AI chat message history when updated
+  // Auto-save AI chat message history when updated (skip initial load)
+  const chatFirstRender = useRef(true)
   useEffect(() => {
+    if (chatFirstRender.current) {
+      chatFirstRender.current = false
+      return
+    }
     if (chatMessages.length <= 2 && chatMessages[0]?.id === 'msg-1') return
     const timer = setTimeout(() => {
       fetch(`/api/documents/${document.id}/chat`, {
@@ -669,30 +695,43 @@ export function DocumentReader({
               }
               className="flex flex-col items-center gap-6 w-full"
             >
-              {Array.from(new Array(pdfNumPages), (el, index) => (
-                <div 
-                  key={`page_${index + 1}`} 
-                  id={`pdf-page-${index + 1}`}
-                  className="pdf-page-container bg-white shadow-xl rounded-md overflow-hidden relative group" 
-                  data-page-number={index + 1}
+              {Array.from(new Array(pdfNumPages), (el, index) => {
+                const pageNum = index + 1
+                // Windowed rendering: mount heavy <Page> canvases only near the
+                // current page (was: all N pages at once → 50 mounts for 50pp).
+                // Containers for all pages preserve scroll height + observer sync.
+                const near = Math.abs(pageNum - currentPage) <= 4
+                return (
+                <div
+                  key={`page_${pageNum}`}
+                  id={`pdf-page-${pageNum}`}
+                  className="pdf-page-container bg-white shadow-xl rounded-md overflow-hidden relative group"
+                  data-page-number={pageNum}
                 >
                   <div className="absolute top-2 left-2 z-10 bg-background/80 text-foreground text-[10px] font-mono px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition shadow-sm border border-border">
-                    Page {index + 1}
+                    Page {pageNum}
                   </div>
-                  <Page 
-                    pageNumber={index + 1} 
+                  {near ? (
+                  <Page
+                    pageNumber={pageNum}
                     width={pdfWidth}
                     renderTextLayer={true}
                     renderAnnotationLayer={true}
                     loading={
                       <div className="w-full h-[600px] bg-muted/40 animate-pulse flex flex-col items-center justify-center gap-2 border border-border rounded">
                         <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                        <span className="text-xs text-muted-foreground font-mono font-medium">Rendering Page {index + 1}...</span>
+                        <span className="text-xs text-muted-foreground font-mono font-medium">Rendering Page {pageNum}...</span>
                       </div>
                     }
                   />
+                  ) : (
+                    <div className="w-full h-[800px] bg-muted/20 border border-border/50 rounded flex items-center justify-center">
+                      <span className="text-xs text-muted-foreground font-mono">Page {pageNum} — scroll or jump to render</span>
+                    </div>
+                  )}
                 </div>
-              ))}
+                )
+              })}
             </Document>
           )}
         </div>

@@ -58,11 +58,12 @@ export function ModernDashboard({ user }: { user?: UserProps }) {
   const [isLoadingRecent, setIsLoadingRecent] = useState(true)
 
   useEffect(() => {
-    fetch('/api/documents')
+    const ctrl = new AbortController()
+    fetch('/api/documents?take=3', { signal: ctrl.signal })
       .then(res => res.json())
       .then(data => {
         if (data.documents && Array.isArray(data.documents)) {
-          const formatted = data.documents.slice(0, 3).map((d: ApiDocumentSummary) => ({
+          const formatted = data.documents.map((d: ApiDocumentSummary) => ({
              id: d.id,
              title: d.title,
              fileType: d.fileType || 'PDF Textbook',
@@ -75,8 +76,12 @@ export function ModernDashboard({ user }: { user?: UserProps }) {
           setRecentDocuments(formatted)
         }
       })
-      .catch(e => console.warn('Could not fetch recent docs:', e))
+      .catch(e => {
+        if (e instanceof DOMException && e.name === 'AbortError') return
+        console.warn('Could not fetch recent docs:', e)
+      })
       .finally(() => setIsLoadingRecent(false))
+    return () => ctrl.abort()
   }, [])
 
   return (

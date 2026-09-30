@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getStoredDocumentById } from '@/lib/documents-store'
 import { getCurrentUser } from '@/lib/auth'
 import { getErrorMessage } from '@/lib/utils'
+import { checkRateLimitWithIp, rateLimitedResponse, RATE_PRESETS } from '@/lib/rate-limit'
 import { headers } from 'next/headers'
 
 export async function GET(
@@ -11,6 +12,8 @@ export async function GET(
   try {
     const user = await getCurrentUser(await headers())
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { allowed, retryAfterSec } = await checkRateLimitWithIp(req, `read:${user.id}`, RATE_PRESETS.read.limit, RATE_PRESETS.read.windowMs, RATE_PRESETS.read.ipLimit)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
 
     const { id } = await params
     const doc = await getStoredDocumentById(id, user.id)

@@ -1,6 +1,3 @@
-◇ injected env (15) from .env.local // tip: ◈ secrets for agents [www.dotenvx.com]
-Loaded Prisma config from prisma.config.ts.
-
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 

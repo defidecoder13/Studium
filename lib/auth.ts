@@ -1,10 +1,15 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
+import { cache } from 'react'
 import prisma from '@/lib/db'
+import { isDemoAuthEnabled } from '@/lib/env'
 
 /**
  * Single canonical ID for the local-dev / demo user.
  * All offline fallbacks across the app use this constant
  * so per-user data stays consistent.
+ *
+ * Demo auth itself lives in `@/lib/env` (single source shared with
+ * `proxy.ts`): opt-in via ALLOW_DEMO_AUTH=1, never active in production.
  */
 export const DEMO_USER_ID = 'demo-user-id'
 export const DEMO_USER_EMAIL = 'alex.rivera@stanford.edu'
@@ -28,9 +33,11 @@ export interface ClerkAuthUser {
  * once a record exists it is served from the local DB (fast path) so we don't
  * hit Clerk's API on every route change.
  * Outside production, falls back to the demo user if unauthenticated.
+ *
+ * Cached per-request via React `cache()` so layout + page double-calls
+ * (e.g. app layout guard + dashboard) hit the DB once, not twice.
  */
-export async function getCurrentUser(_headersObj?: unknown): Promise<ClerkAuthUser | null> {
-  void _headersObj
+async function _getCurrentUserUncached(): Promise<ClerkAuthUser | null> {
   try {
     const { userId } = await auth()
     if (userId) {
@@ -105,8 +112,9 @@ export async function getCurrentUser(_headersObj?: unknown): Promise<ClerkAuthUs
     // Auth check fallback
   }
 
-  // Local development / fallback user
-  if (process.env.NODE_ENV !== 'production') {
+  // Local development fallback — only when explicitly opted in.
+  // Never active in production, even if ALLOW_DEMO_AUTH leaks.
+  if (isDemoAuthEnabled()) {
     await prisma.user
       .upsert({
         where: { id: DEMO_USER_ID },
@@ -129,14 +137,21 @@ export async function getCurrentUser(_headersObj?: unknown): Promise<ClerkAuthUs
   return null
 }
 
+export const getCurrentUser = cache(
+  async (_headersObj?: unknown): Promise<ClerkAuthUser | null> => {
+    void _headersObj
+    return _getCurrentUserUncached()
+  }
+)
+
 /**
  * Returns the resolved user ID for the current request.
  * - Real Clerk user when authenticated
- * - Demo user in dev when unauthenticated
- * - null in production when unauthenticated
+ * - Demo user only when ALLOW_DEMO_AUTH=1 locally
+ * - null otherwise (including all of production when unauthenticated)
  */
 export async function getCurrentUserId(_headersObj?: unknown): Promise<string | null> {
   const user = await getCurrentUser(_headersObj)
   if (user) return user.id
-  return process.env.NODE_ENV === 'production' ? null : DEMO_USER_ID
+  return isDemoAuthEnabled() ? DEMO_USER_ID : null
 }

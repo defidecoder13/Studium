@@ -42,15 +42,33 @@ export async function ensureUserExists(userId: string) {
   }
 }
 
-export const getStoredDocuments = async (userId: string): Promise<StoredDocument[]> => {
+export const getStoredDocuments = async (
+  userId: string,
+  opts?: { take?: number; cursor?: string }
+): Promise<StoredDocument[]> => {
   try {
+    // List view never needs page texts — select scalar fields only.
+    // Previously `include: { pages: true }` loaded every page's full text
+    // into memory just to discard it in the route. take/cursor paginate.
+    const take = Math.max(1, Math.min(opts?.take ?? 50, 100))
     const docs = await prisma.document.findMany({
       where: { userId },
-      include: { pages: true },
-      orderBy: { uploadedAt: 'desc' }
+      select: {
+        id: true,
+        title: true,
+        fileType: true,
+        totalPages: true,
+        uploadedAt: true,
+        folder: true,
+        fileUrl: true,
+        fileSize: true,
+      },
+      orderBy: { uploadedAt: 'desc' },
+      take: take + 1,
+      ...(opts?.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
     })
-    
-    return docs.map(d => ({
+
+    return docs.slice(0, take).map((d) => ({
       id: d.id,
       title: d.title,
       fileType: d.fileType,
@@ -59,11 +77,7 @@ export const getStoredDocuments = async (userId: string): Promise<StoredDocument
       folder: d.folder,
       fileUrl: d.fileUrl || undefined,
       fileSize: d.fileSize,
-      pages: d.pages.map(p => ({
-        pageNumber: p.pageNumber,
-        text: p.textContent,
-        wordCount: p.wordCount
-      }))
+      pages: [],
     }))
   } catch (error) {
     console.error('Error fetching documents', error)
@@ -101,8 +115,16 @@ export const getStoredDocumentById = async (id: string, userId?: string): Promis
 
 export const saveStoredDocument = async (doc: StoredDocument, userId: string): Promise<void> => {
   await ensureUserExists(userId)
-  
-  // Upsert the core document record first
+
+  // Owner-scoped upsert: never overwrite another user's document on ID collision.
+  const existing = await prisma.document.findUnique({
+    where: { id: doc.id },
+    select: { userId: true },
+  })
+  if (existing && existing.userId !== userId) {
+    throw new Error('Document ID collision: forbidden')
+  }
+  // Upsert the core document record (ownership already verified above)
   await prisma.document.upsert({
     where: { id: doc.id },
     update: {
@@ -128,28 +150,53 @@ export const saveStoredDocument = async (doc: StoredDocument, userId: string): P
   // Delete old pages
   await prisma.pageChunk.deleteMany({ where: { documentId: doc.id } })
 
-  // Insert new pages along with their embeddings
-  for (const p of doc.pages) {
-    const chunkId = crypto.randomUUID()
-    
-    // Some pages (like pure images) might have empty text.
-    let vector: number[] = []
-    if (p.text && p.text.trim().length > 0) {
-      vector = await generateEmbedding(p.text)
+  // Embeddings: concurrency 5 (was fully serial: 50 pages = 50x Gemini RTT
+  // inside the 30s maxDuration). Cap text per page to bound token cost.
+  const CONCURRENCY = 5
+  const queue = [...doc.pages]
+  const prepared: { p: (typeof doc.pages)[number]; vector: number[] }[] = []
+  async function worker() {
+    while (queue.length > 0) {
+      const p = queue.shift()!
+      let vector: number[] = []
+      // Some pages (like pure images) might have empty text.
+      if (p.text && p.text.trim().length > 0) {
+        try {
+          vector = await generateEmbedding(p.text.slice(0, 8000))
+        } catch (e) {
+          console.error('Embedding failed, storing page without vector:', e)
+          vector = []
+        }
+      }
+      prepared.push({ p, vector })
     }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => worker())
+  )
+  prepared.sort((a, b) => a.p.pageNumber - b.p.pageNumber)
 
-    if (vector.length > 0) {
-      const vectorStr = `[${vector.join(',')}]`
-      await prisma.$executeRaw`
-        INSERT INTO "PageChunk" ("id", "documentId", "pageNumber", "textContent", "wordCount", "embedding")
-        VALUES (${chunkId}, ${doc.id}, ${p.pageNumber}, ${p.text}, ${p.wordCount}, ${vectorStr}::vector)
-      `
-    } else {
-      await prisma.$executeRaw`
-        INSERT INTO "PageChunk" ("id", "documentId", "pageNumber", "textContent", "wordCount")
-        VALUES (${chunkId}, ${doc.id}, ${p.pageNumber}, ${p.text}, ${p.wordCount})
-      `
-    }
+  // Bulk insert (was 50x individual INSERTs). createMany can't set the
+  // vector column via Prisma, so batch raw inserts in groups of 10.
+  const BATCH = 10
+  for (let i = 0; i < prepared.length; i += BATCH) {
+    const batch = prepared.slice(i, i + BATCH)
+    await Promise.all(
+      batch.map(({ p, vector }) => {
+        const chunkId = crypto.randomUUID()
+        if (vector.length > 0 && vector.every((n) => Number.isFinite(n))) {
+          const vectorStr = `[${vector.join(',')}]`
+          return prisma.$executeRaw`
+            INSERT INTO "PageChunk" ("id", "documentId", "pageNumber", "textContent", "wordCount", "embedding")
+            VALUES (${chunkId}, ${doc.id}, ${p.pageNumber}, ${p.text}, ${p.wordCount}, ${vectorStr}::vector)
+          `
+        }
+        return prisma.$executeRaw`
+          INSERT INTO "PageChunk" ("id", "documentId", "pageNumber", "textContent", "wordCount")
+          VALUES (${chunkId}, ${doc.id}, ${p.pageNumber}, ${p.text}, ${p.wordCount})
+        `
+      })
+    )
   }
 }
 
@@ -173,39 +220,51 @@ export const deleteStoredDocument = async (id: string, userId: string): Promise<
 }
 
 export const searchDocumentPages = async (query: string, documentId?: string, userId?: string) => {
-  const q = query.toLowerCase().trim()
+  const q = query.slice(0, 200).trim()
   if (!q) return []
 
   try {
-    const targetDocs = await prisma.document.findMany({
+    // DB-level ILIKE with take — previously loaded ALL docs + ALL pages
+    // into Node and filtered in JS (full-table scan in memory).
+    const chunks = await prisma.pageChunk.findMany({
       where: {
-        ...(documentId ? { id: documentId } : {}),
-        ...(userId ? { userId } : {}),
+        textContent: { contains: q, mode: 'insensitive' },
+        ...(documentId || userId
+          ? {
+              document: {
+                ...(documentId ? { id: documentId } : {}),
+                ...(userId ? { userId } : {}),
+              },
+            }
+          : {}),
       },
-      include: { pages: true }
+      select: {
+        pageNumber: true,
+        textContent: true,
+        documentId: true,
+        document: { select: { title: true } },
+      },
+      orderBy: { pageNumber: 'asc' },
+      take: 15,
     })
-    
-    const results: { documentTitle: string; pageNumber: number; snippet: string; documentId: string }[] = []
 
-    for (const doc of targetDocs) {
-      for (const page of doc.pages) {
-        if (page.textContent.toLowerCase().includes(q)) {
-          const idx = page.textContent.toLowerCase().indexOf(q)
-          const start = Math.max(0, idx - 60)
-          const end = Math.min(page.textContent.length, idx + q.length + 140)
-          const snippet = (start > 0 ? '...' : '') + page.textContent.slice(start, end).replace(/\n+/g, ' ') + (end < page.textContent.length ? '...' : '')
-
-          results.push({
-            documentId: doc.id,
-            documentTitle: doc.title,
-            pageNumber: page.pageNumber,
-            snippet,
-          })
-        }
+    return chunks.map((c) => {
+      const lower = c.textContent.toLowerCase()
+      const idx = lower.indexOf(q.toLowerCase())
+      const at = idx >= 0 ? idx : 0
+      const start = Math.max(0, at - 60)
+      const end = Math.min(c.textContent.length, at + q.length + 140)
+      const snippet =
+        (start > 0 ? '...' : '') +
+        c.textContent.slice(start, end).replace(/\n+/g, ' ') +
+        (end < c.textContent.length ? '...' : '')
+      return {
+        documentId: c.documentId,
+        documentTitle: c.document.title,
+        pageNumber: c.pageNumber,
+        snippet,
       }
-    }
-
-    return results.slice(0, 15)
+    })
   } catch (e) {
     console.error('Error searching pages', e)
     return []

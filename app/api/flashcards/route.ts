@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getCurrentUserId } from '@/lib/auth'
 import { getErrorMessage } from '@/lib/utils'
+import { checkRateLimitWithIp, rateLimitedResponse, RATE_PRESETS } from '@/lib/rate-limit'
 import { headers } from 'next/headers'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const userId = await getCurrentUserId(await headers())
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { allowed, retryAfterSec } = await checkRateLimitWithIp(req, `heavy:${userId}`, RATE_PRESETS.heavy.limit, RATE_PRESETS.heavy.windowMs, RATE_PRESETS.heavy.ipLimit)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
 
+    const { searchParams } = new URL(req.url)
+    const takeDecks = Math.max(1, Math.min(Number(searchParams.get('take')) || 20, 50))
     const decks = await prisma.flashcardDeck.findMany({
       where: { userId },
       include: {
@@ -24,12 +29,14 @@ export async function GET() {
         cards: {
           orderBy: {
             nextReviewDate: 'asc'
-          }
+          },
+          take: 200,
         }
       },
       orderBy: {
         createdAt: 'desc'
-      }
+      },
+      take: takeDecks,
     })
 
     const now = new Date()
@@ -53,7 +60,8 @@ export async function GET() {
         totalCards,
         dueCardsCount
       }
-    })
+    },
+    { headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=300' } })
   } catch (error) {
     console.error('Error fetching flashcard decks:', error)
     return NextResponse.json({ error: getErrorMessage(error, 'Failed to fetch flashcard decks') }, { status: 500 })
@@ -64,6 +72,8 @@ export async function DELETE(req: NextRequest) {
   try {
     const userId = await getCurrentUserId(await headers())
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { allowed, retryAfterSec } = await checkRateLimitWithIp(req, `write:flashcards:${userId}`, RATE_PRESETS.write.limit, RATE_PRESETS.write.windowMs, RATE_PRESETS.write.ipLimit)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
     const deckId = req.nextUrl.searchParams.get('deckId')
     const cardId = req.nextUrl.searchParams.get('cardId')
 

@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { getCurrentUserId } from '@/lib/auth'
 import { getErrorMessage } from '@/lib/utils'
+import { checkRateLimitWithIp, rateLimitedResponse } from '@/lib/rate-limit'
 import { headers } from 'next/headers'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const userId = await getCurrentUserId(await headers())
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Generous: review sessions legitimately fire one PATCH per card.
+    const { allowed, retryAfterSec } = await checkRateLimitWithIp(req, `write:review:${userId}`, 120, 60_000, 200)
+    if (!allowed) return rateLimitedResponse(retryAfterSec)
 
     const body = await req.json()
     const { rating } = body // 'again', 'hard', 'medium', 'easy'
