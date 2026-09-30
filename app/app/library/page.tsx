@@ -17,7 +17,7 @@ import {
   Link as LinkIcon
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, getErrorMessage } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { DocumentData } from '@/components/reader/document-reader'
@@ -217,7 +217,8 @@ export default function LibraryPage() {
       }
     } catch (err) {
       console.error('PDF upload error:', err)
-      alert(`Could not upload PDF: ${getErrorMessage(err)}. Make sure it is a valid PDF or document file.`)
+      const reason = err instanceof Error && err.message ? err.message : 'Make sure it is a valid PDF or document file.'
+      alert(`Could not upload PDF: ${reason}`)
     } finally {
       setUploadingFile(null)
     }
@@ -262,7 +263,10 @@ export default function LibraryPage() {
         setYoutubeUrl('')
       }
     } catch (err) {
-      alert(getErrorMessage(err, 'Failed to import YouTube video'))
+      // Show the server's message (it is already a user-safe string from the
+      // API route). getErrorMessage() returns only the generic fallback in
+      // production builds, which hides the real cause.
+      alert(err instanceof Error && err.message ? err.message : 'Failed to import YouTube video')
     } finally {
       setIsImportingYoutube(false)
     }
