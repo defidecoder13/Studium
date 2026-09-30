@@ -97,8 +97,13 @@ function getCaptionTracks(playerResponse: unknown): CaptionTrack[] {
   return Array.isArray(tracks) ? tracks.filter((t) => typeof t?.baseUrl === 'string') : []
 }
 
+/** Per-stage probe results, for server logs + support diagnostics. */
+export interface FetchDiagnostics {
+  stages: string[]
+}
+
 /** 1. InnerTube player with API key — works from most datacenter IPs. */
-async function innertubeTracks(videoId: string): Promise<CaptionTrack[] | null> {
+async function innertubeTracks(videoId: string, diag?: FetchDiagnostics): Promise<CaptionTrack[] | null> {
   try {
     const resp = await fetch(
       `https://www.youtube.com/youtubei/v1/player?prettyPrint=false&key=${INNERTUBE_KEY}`,
@@ -117,17 +122,24 @@ async function innertubeTracks(videoId: string): Promise<CaptionTrack[] | null> 
         signal: withTimeout(FETCH_TIMEOUT_MS),
       }
     )
-    if (!resp.ok) return null
+    if (!resp.ok) {
+      diag?.stages.push(`innertube:http${resp.status}`)
+      return null
+    }
     const data = await resp.json()
     const tracks = getCaptionTracks(data)
+    diag?.stages.push(
+      `innertube:http200/${tracks.length}tracks/${(data?.playabilityStatus?.status as string) || 'no-status'}`
+    )
     return tracks.length > 0 ? tracks : null
-  } catch {
+  } catch (err) {
+    diag?.stages.push(`innertube:exception:${err instanceof Error ? err.name : 'unknown'}`)
     return null
   }
 }
 
 /** 2. Watch page with consent cookie (bypasses the EU consent wall). */
-async function watchPageTracks(videoId: string): Promise<CaptionTrack[]> {
+async function watchPageTracks(videoId: string, diag?: FetchDiagnostics): Promise<CaptionTrack[]> {
   const resp = await fetch(`https://www.youtube.com/watch?v=${videoId}&hl=en`, {
     headers: {
       'User-Agent': BROWSER_UA,
@@ -137,13 +149,20 @@ async function watchPageTracks(videoId: string): Promise<CaptionTrack[]> {
     signal: withTimeout(FETCH_TIMEOUT_MS),
   })
   const html = await resp.text()
-  if (html.includes('class="g-recaptcha"')) throw new YouTubeRateLimitedError()
-  if (!html.includes('"playabilityStatus":')) throw new YouTubeUnavailableError('This video is unavailable')
+  if (html.includes('class="g-recaptcha"')) {
+    diag?.stages.push('watch:recaptcha')
+    throw new YouTubeRateLimitedError()
+  }
+  if (!html.includes('"playabilityStatus":')) {
+    diag?.stages.push(`watch:http${resp.status}/no-playability`)
+    throw new YouTubeUnavailableError('This video is unavailable')
+  }
   const playerResponse = extractInlineJson(html, 'ytInitialPlayerResponse')
   const status = (
     playerResponse as { playabilityStatus?: { status?: string; reason?: string } } | null
   )?.playabilityStatus
   if (status && status.status && status.status !== 'OK') {
+    diag?.stages.push(`watch:${status.status}`)
     throw new YouTubeUnavailableError(status.reason || 'This video is private, deleted, or age-restricted')
   }
   return getCaptionTracks(playerResponse)
@@ -218,28 +237,40 @@ async function fetchTrackSegments(track: CaptionTrack): Promise<TranscriptSegmen
  * watch page, then each caption track in preference order.
  * @throws YouTubeRateLimitedError | YouTubeNoCaptionsError | YouTubeUnavailableError
  */
-export async function fetchYouTubeTranscriptRobust(videoId: string): Promise<TranscriptSegment[]> {
+export async function fetchYouTubeTranscriptRobust(
+  videoId: string,
+  diag?: FetchDiagnostics
+): Promise<TranscriptSegment[]> {
   // Attempt 1: keyed InnerTube
-  const itTracks = await innertubeTracks(videoId)
+  const itTracks = await innertubeTracks(videoId, diag)
   if (itTracks) {
     for (const track of orderTracks(itTracks)) {
       try {
         const segs = await fetchTrackSegments(track)
-        if (segs.length > 0) return segs
+        if (segs.length > 0) {
+          diag?.stages.push(`innertube-track:${track.languageCode || '?'}:ok/${segs.length}`)
+          return segs
+        }
+        diag?.stages.push(`innertube-track:${track.languageCode || '?'}:empty`)
       } catch {
-        // try next track
+        diag?.stages.push(`innertube-track:${track.languageCode || '?'}:fetch-fail`)
       }
     }
   }
 
   // Attempt 2: watch page (may throw rate-limited / unavailable)
-  const pageTracks = await watchPageTracks(videoId)
+  const pageTracks = await watchPageTracks(videoId, diag)
+  diag?.stages.push(`watch:${pageTracks.length}tracks`)
   for (const track of orderTracks(pageTracks)) {
     try {
       const segs = await fetchTrackSegments(track)
-      if (segs.length > 0) return segs
+      if (segs.length > 0) {
+        diag?.stages.push(`watch-track:${track.languageCode || '?'}:ok/${segs.length}`)
+        return segs
+      }
+      diag?.stages.push(`watch-track:${track.languageCode || '?'}:empty`)
     } catch {
-      // try next track
+      diag?.stages.push(`watch-track:${track.languageCode || '?'}:fetch-fail`)
     }
   }
 

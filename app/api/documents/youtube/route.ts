@@ -8,6 +8,7 @@ import { headers } from 'next/headers'
 
 import {
   fetchYouTubeTranscriptRobust,
+  FetchDiagnostics,
   YouTubeNoCaptionsError,
   YouTubeRateLimitedError,
   YouTubeUnavailableError,
@@ -41,19 +42,23 @@ export async function POST(req: NextRequest) {
     // blocks datacenter IPs (common on Vercel).
     let transcriptData: Array<{ text: string; duration: number; offset: number }> = []
     let fetchError: unknown = null
+    const diag: FetchDiagnostics = { stages: [] }
     try {
       transcriptData = await YoutubeTranscript.fetchTranscript(videoId)
+      diag.stages.push(`lib:ok/${transcriptData.length}`)
     } catch (err) {
+      diag.stages.push(`lib:fail/${err instanceof Error ? err.message.slice(0, 80) : 'unknown'}`)
       console.error('[youtube] primary transcript fetch failed:', err)
       try {
-        transcriptData = await fetchYouTubeTranscriptRobust(videoId)
+        transcriptData = await fetchYouTubeTranscriptRobust(videoId, diag)
       } catch (fallbackErr) {
         console.error('[youtube] fallback transcript fetch failed:', fallbackErr)
         fetchError = fallbackErr
       }
     }
-
     if (transcriptData.length === 0) {
+      console.error(`[youtube] transcript stages for ${videoId}:`, diag.stages.join(' | '))
+      const ref = diag.stages.length > 0 ? ` (ref: ${diag.stages.join(' | ')})` : ''
       if (fetchError instanceof YouTubeRateLimitedError) {
         return NextResponse.json(
           { error: 'YouTube is temporarily rate-limiting imports from our servers. Please try again in a few minutes.' },
@@ -61,15 +66,23 @@ export async function POST(req: NextRequest) {
         )
       }
       if (fetchError instanceof YouTubeUnavailableError) {
-        return NextResponse.json({ error: fetchError.message }, { status: 400 })
-      }
-      if (fetchError instanceof YouTubeNoCaptionsError) {
+        const isBotCheck = /bot/i.test(fetchError.message)
         return NextResponse.json(
-          { error: 'This video has no captions to import. Try a video with subtitles or auto-generated captions enabled.' },
+          {
+            error: isBotCheck
+              ? `YouTube is blocking automated imports from our servers right now (bot-check). Please try again in a few minutes, or try a different video.${ref}`
+              : `${fetchError.message}${ref}`,
+          },
           { status: 400 }
         )
       }
-      return NextResponse.json({ error: 'Could not fetch transcript. The video might not have captions enabled.' }, { status: 400 })
+      if (fetchError instanceof YouTubeNoCaptionsError) {
+        return NextResponse.json(
+          { error: `This video has no captions to import. Try a video with subtitles or auto-generated captions enabled.${ref}` },
+          { status: 400 }
+        )
+      }
+      return NextResponse.json({ error: `Could not fetch transcript. The video might not have captions enabled.${ref}` }, { status: 400 })
     }
 
     // Detect the offset unit. youtube-transcript v1.3.1 parses two caption formats:
