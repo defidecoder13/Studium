@@ -102,6 +102,61 @@ export interface FetchDiagnostics {
   stages: string[]
 }
 
+export interface WordPage {
+  pageNumber: number
+  text: string
+  wordCount: number
+}
+
+/**
+ * Strip timestamp lines/tokens copied from YouTube's transcript panel
+ * (`00:12`, `01:02:33`, `00:12.500 --> 00:15.000`) so only spoken text
+ * is indexed. Collapses whitespace.
+ */
+export function cleanPastedTranscript(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false
+      // Pure timestamp lines, incl. "00:00 - 00:05" / "-->" ranges
+      if (/^[\d:.,\s\-→>]+$/.test(line) && /\d:\d/.test(line)) return false
+      return true
+    })
+    .join('\n')
+    // Inline "(00:12)" / "[00:12]" artifacts
+    .replace(/[[(]\d{1,2}:\d{2}(?::\d{2})?[\])]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Chunk pasted plain-text transcripts into pages (~450 words ≈ 3 minutes
+ * of speech, matching the time-based pages of fetched transcripts).
+ * Breaks at sentence boundaries when one falls in the last quarter.
+ */
+export function chunkWordsIntoPages(words: string[], wordsPerPage = 450): WordPage[] {
+  const pages: WordPage[] = []
+  let i = 0
+  let pageNumber = 1
+  while (i < words.length) {
+    let end = Math.min(i + wordsPerPage, words.length)
+    if (end < words.length) {
+      const floor = i + Math.floor(wordsPerPage * 0.75)
+      for (let j = end - 1; j >= floor; j--) {
+        if (/[.!?…]["'”’)\]]?$/.test(words[j])) {
+          end = j + 1
+          break
+        }
+      }
+    }
+    const slice = words.slice(i, end)
+    pages.push({ pageNumber: pageNumber++, text: slice.join(' '), wordCount: slice.length })
+    i = end
+  }
+  return pages
+}
+
 /** 1. InnerTube player with API key — works from most datacenter IPs. */
 async function innertubeTracks(videoId: string, diag?: FetchDiagnostics): Promise<CaptionTrack[] | null> {
   try {

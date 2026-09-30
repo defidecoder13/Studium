@@ -100,6 +100,9 @@ export default function LibraryPage() {
   const [showYoutubeModal, setShowYoutubeModal] = useState(false)
   const [youtubeUrl, setYoutubeUrl] = useState('')
   const [isImportingYoutube, setIsImportingYoutube] = useState(false)
+  const [youtubeError, setYoutubeError] = useState<string | null>(null)
+  const [showManualPaste, setShowManualPaste] = useState(false)
+  const [manualTranscript, setManualTranscript] = useState('')
   const [isDragging, setIsDragging] = useState(false)
   const [uploadingFile, setUploadingFile] = useState<string | null>(null)
 
@@ -224,16 +227,26 @@ export default function LibraryPage() {
     }
   }
 
-  const handleImportYoutube = async () => {
+  const resetYoutubeModal = () => {
+    setShowYoutubeModal(false)
+    setYoutubeUrl('')
+    setYoutubeError(null)
+    setShowManualPaste(false)
+    setManualTranscript('')
+  }
+
+  const handleImportYoutube = async (pastedTranscript?: string) => {
     if (!youtubeUrl) return
     setIsImportingYoutube(true)
+    setYoutubeError(null)
     try {
       const res = await fetch('/api/documents/youtube', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: youtubeUrl,
-          folder: activeFolder === 'All Documents' ? 'General' : activeFolder
+          folder: activeFolder === 'All Documents' ? 'General' : activeFolder,
+          ...(pastedTranscript && pastedTranscript.trim() ? { transcript: pastedTranscript } : {}),
         })
       })
 
@@ -259,14 +272,13 @@ export default function LibraryPage() {
           fileUrl: data.document.fileUrl,
         }
         setDocuments(prev => [newDoc, ...prev.filter(d => d.id !== newDoc.id)])
-        setShowYoutubeModal(false)
-        setYoutubeUrl('')
+        resetYoutubeModal()
       }
     } catch (err) {
-      // Show the server's message (it is already a user-safe string from the
-      // API route). getErrorMessage() returns only the generic fallback in
-      // production builds, which hides the real cause.
-      alert(err instanceof Error && err.message ? err.message : 'Failed to import YouTube video')
+      // Inline (not alert): the server message is already user-safe and may
+      // contain a `ref:` trail. Keep the modal open so the user can retry or
+      // fall back to pasting the transcript manually.
+      setYoutubeError(err instanceof Error && err.message ? err.message : 'Failed to import YouTube video')
     } finally {
       setIsImportingYoutube(false)
     }
@@ -711,7 +723,7 @@ export default function LibraryPage() {
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="w-full max-w-lg rounded-3xl border border-border bg-card p-6 sm:p-8 shadow-2xl space-y-6 relative">
             <button
-              onClick={() => setShowYoutubeModal(false)}
+              onClick={resetYoutubeModal}
               className="absolute top-5 right-5 p-2 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition"
             >
               <X className="w-5 h-5" />
@@ -742,7 +754,7 @@ export default function LibraryPage() {
               </div>
 
               <Button
-                onClick={handleImportYoutube}
+                onClick={() => handleImportYoutube()}
                 disabled={!youtubeUrl || isImportingYoutube}
                 className="w-full h-12 rounded-xl bg-destructive hover:bg-destructive/90 text-white font-bold gap-2"
               >
@@ -755,6 +767,55 @@ export default function LibraryPage() {
                   'Import Video'
                 )}
               </Button>
+
+              {youtubeError && (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs leading-relaxed text-foreground">
+                  {youtubeError}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowManualPaste((v) => !v)}
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 transition"
+              >
+                {showManualPaste ? 'Hide manual paste' : 'Auto-fetch failing? Paste the transcript manually'}
+              </button>
+
+              {showManualPaste && (
+                <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Open the video on YouTube → expand the description → <span className="text-foreground font-semibold">Show transcript</span> →
+                    copy the text (timestamps are fine, we strip them) and paste it below.
+                  </p>
+                  <textarea
+                    value={manualTranscript}
+                    onChange={(e) => setManualTranscript(e.target.value)}
+                    placeholder="Paste the full video transcript here (at least 50 words)..."
+                    rows={6}
+                    className="w-full rounded-xl border border-border bg-background p-3 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all resize-y min-h-28"
+                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[11px] font-mono text-muted-foreground">
+                      {manualTranscript.split(/\s+/).filter(Boolean).length} words
+                    </span>
+                    <Button
+                      onClick={() => handleImportYoutube(manualTranscript)}
+                      disabled={!youtubeUrl || isImportingYoutube || manualTranscript.split(/\s+/).filter(Boolean).length < 50}
+                      className="h-10 rounded-xl font-bold gap-2"
+                    >
+                      {isImportingYoutube ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          Importing...
+                        </>
+                      ) : (
+                        'Import from pasted text'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
