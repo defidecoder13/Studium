@@ -13,6 +13,8 @@ import {
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { deleteWithUndo } from '@/components/ui/undo-toast'
 import { cn } from '@/lib/utils'
 
 interface StudyPlan {
@@ -28,8 +30,8 @@ interface StudyPlan {
 }
 
 const PRIORITY_LABELS: Record<string, { label: string; className: string }> = {
-  low: { label: 'Low', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' },
-  medium: { label: 'Medium', className: 'bg-primary/10 text-primary border-primary/20' },
+  low: { label: 'Low', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20' },
+  medium: { label: 'Medium', className: 'bg-primary/10 text-accent border-primary/20' },
   high: { label: 'High', className: 'bg-destructive/10 text-destructive border-destructive/20' },
 }
 
@@ -68,6 +70,8 @@ export default function StudyPlannerPage() {
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
   const [category, setCategory] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [planToDelete, setPlanToDelete] = useState<StudyPlan | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -89,6 +93,7 @@ export default function StudyPlannerPage() {
   const handleCreate = async () => {
     if (!title.trim() || !dueDate) return
     setIsSaving(true)
+    setFormError(null)
     try {
       const res = await fetch('/api/study-plans', {
         method: 'POST',
@@ -116,10 +121,10 @@ export default function StudyPlannerPage() {
         setCategory(null)
         setShowForm(false)
       } else {
-        alert(data.error || 'Failed to create plan')
+        setFormError(data.error || 'Failed to create plan. Check your connection and try again.')
       }
     } catch {
-      alert('Failed to create plan')
+      setFormError('Failed to create plan. Check your connection and try again.')
     } finally {
       setIsSaving(false)
     }
@@ -144,14 +149,30 @@ export default function StudyPlannerPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this study plan?')) return
-    try {
-      await fetch(`/api/study-plans?id=${id}`, { method: 'DELETE' })
-      setPlans((prev) => prev.filter((p) => p.id !== id))
-    } catch (e) {
-      console.error('Failed to delete plan:', e)
-    }
+  const handleDelete = (plan: StudyPlan) => {
+    setPlanToDelete(plan)
+  }
+
+  const confirmDelete = () => {
+    const plan = planToDelete
+    if (!plan) return
+    setPlanToDelete(null)
+    const index = plans.findIndex((p) => p.id === plan.id)
+    deleteWithUndo({
+      remove: () => setPlans((prev) => prev.filter((p) => p.id !== plan.id)),
+      restore: () =>
+        setPlans((prev) => {
+          const next = [...prev]
+          next.splice(Math.min(Math.max(index, 0), next.length), 0, plan)
+          return next
+        }),
+      commit: async () => {
+        const res = await fetch(`/api/study-plans?id=${plan.id}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Delete failed')
+      },
+      title: 'Plan deleted',
+      message: `"${plan.title}" will be removed for good.`,
+    })
   }
 
   const stats = useMemo(() => {
@@ -176,10 +197,10 @@ export default function StudyPlannerPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-2.5">
             <h1 className="text-3xl font-heading font-bold text-foreground tracking-tight flex items-center gap-2.5">
-              <CalendarClock className="w-8 h-8 text-primary" />
+              <CalendarClock className="w-8 h-8 text-accent" />
               <span>Study Planner</span>
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-mono font-bold">
+            <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-accent text-xs font-mono font-bold">
               {stats.pending} pending · {stats.overdue} overdue
             </span>
           </div>
@@ -190,7 +211,7 @@ export default function StudyPlannerPage() {
 
         <Button
           onClick={() => setShowForm((v) => !v)}
-          className="h-10 px-5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-bold shadow-sm transition flex items-center gap-2 text-xs"
+          className="h-10 px-5 bg-primary text-primary-foreground hover:bg-primary/90 font-bold transition flex items-center gap-2 text-xs"
         >
           {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           <span>{showForm ? 'Close' : 'New Study Plan'}</span>
@@ -199,19 +220,19 @@ export default function StudyPlannerPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 space-y-1.5">
+        <div className="p-5 rounded-xl border border-border bg-card space-y-1.5">
           <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Total Plans</div>
           <div className="text-2xl font-heading font-bold text-foreground">{stats.total}</div>
         </div>
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 space-y-1.5">
+        <div className="p-5 rounded-xl border border-border bg-card space-y-1.5">
           <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Pending</div>
           <div className="text-2xl font-heading font-bold text-accent">{stats.pending}</div>
         </div>
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 space-y-1.5">
+        <div className="p-5 rounded-xl border border-border bg-card space-y-1.5">
           <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Completed</div>
-          <div className="text-2xl font-heading font-bold text-emerald-600 dark:text-emerald-400">{stats.completed}</div>
+          <div className="text-2xl font-heading font-bold text-emerald-700 dark:text-emerald-400">{stats.completed}</div>
         </div>
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 space-y-1.5">
+        <div className="p-5 rounded-xl border border-border bg-card space-y-1.5">
           <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Overdue</div>
           <div className={cn('text-2xl font-heading font-bold', stats.overdue > 0 ? 'text-destructive' : 'text-muted-foreground')}>
             {stats.overdue}
@@ -221,11 +242,17 @@ export default function StudyPlannerPage() {
 
       {/* Create Form */}
       {showForm && (
-        <div className="p-6 rounded-2xl border border-primary/30 bg-primary/5 space-y-4 animate-in fade-in duration-200">
+        <div className="p-6 rounded-xl border border-primary/30 bg-primary/5 space-y-4 animate-in fade-in duration-200">
           <div className="flex items-center gap-2 text-sm font-heading font-bold text-foreground">
-            <Sparkles className="w-4 h-4 text-primary" />
+            <Sparkles className="w-4 h-4 text-accent" />
             <span>Create a new study plan</span>
           </div>
+
+          {formError && (
+            <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs leading-relaxed text-foreground">
+              {formError}
+            </div>
+          )}
 
           <div className="grid gap-4">
             <div className="grid sm:grid-cols-2 gap-4">
@@ -236,7 +263,7 @@ export default function StudyPlannerPage() {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Review Chapter 4 — Quantum Entanglement"
-                  className="w-full h-10 rounded-xl bg-background border border-border px-3.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary transition"
+                  className="w-full h-10 rounded-lg bg-background border border-border px-3.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary transition"
                 />
               </div>
               <div className="space-y-1.5">
@@ -245,7 +272,7 @@ export default function StudyPlannerPage() {
                   type="date"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full h-10 rounded-xl bg-background border border-border px-3.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary transition"
+                  className="w-full h-10 rounded-lg bg-background border border-border px-3.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary transition"
                 />
               </div>
             </div>
@@ -257,7 +284,7 @@ export default function StudyPlannerPage() {
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
                 placeholder="Optional notes, goals, or topics to cover..."
-                className="w-full rounded-xl bg-background border border-border p-3.5 text-xs focus:outline-none focus:ring-1 focus:ring-foreground transition resize-none"
+                className="w-full rounded-lg bg-background border border-border p-3.5 text-xs focus:outline-none focus:ring-1 focus:ring-foreground transition resize-none"
               />
             </div>
 
@@ -271,7 +298,7 @@ export default function StudyPlannerPage() {
                     key={p}
                     onClick={() => setPriority(p)}
                     className={cn(
-                      'px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition',
+                      'px-3 py-2.5 rounded-lg text-xs font-bold capitalize transition outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       priority === p
                         ? PRIORITY_LABELS[p].className + ' border'
                         : 'bg-background border border-border text-muted-foreground hover:text-foreground'
@@ -300,7 +327,7 @@ export default function StudyPlannerPage() {
                     key={c}
                     onClick={() => setCategory(category === c ? null : c)}
                     className={cn(
-                      'px-3 py-1.5 rounded-lg text-xs font-bold transition',
+                      'px-3 py-2.5 rounded-lg text-xs font-bold transition outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       category === c
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-background border border-border text-muted-foreground hover:text-foreground'
@@ -314,13 +341,13 @@ export default function StudyPlannerPage() {
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-1">
-            <Button variant="outline" onClick={() => setShowForm(false)} className="rounded-xl text-xs h-9">
+            <Button variant="outline" onClick={() => setShowForm(false)} className="text-xs h-9">
               Cancel
             </Button>
             <Button
               onClick={handleCreate}
               disabled={!title.trim() || !dueDate || isSaving}
-              className="rounded-xl h-9 px-5 bg-primary text-primary-foreground hover:bg-primary/90 font-bold text-xs"
+              className="h-9 px-5 bg-primary text-primary-foreground hover:bg-primary/90 font-bold text-xs"
             >
               {isSaving ? 'Creating...' : 'Add Plan'}
             </Button>
@@ -332,15 +359,15 @@ export default function StudyPlannerPage() {
       {isLoading ? (
         <div className="space-y-4 animate-pulse">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="p-5 rounded-2xl border border-border bg-card space-y-3">
+            <div key={i} className="p-5 rounded-xl border border-border bg-card space-y-3">
               <div className="w-48 h-5 rounded bg-muted" />
               <div className="w-full h-4 rounded bg-muted/40" />
             </div>
           ))}
         </div>
       ) : sorted.length === 0 ? (
-        <div className="p-12 md:p-16 rounded-3xl border border-dashed border-border bg-card/40 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+        <div className="p-12 md:p-16 rounded-xl border border-dashed border-border bg-card/40 flex flex-col items-center justify-center text-center space-y-4">
+          <div className="w-16 h-16 rounded-xl bg-primary/10 text-accent flex items-center justify-center">
             <Calendar className="w-8 h-8" />
           </div>
           <div className="space-y-1 max-w-md">
@@ -351,7 +378,7 @@ export default function StudyPlannerPage() {
           </div>
           <Button
             onClick={() => setShowForm(true)}
-            className="mt-2 h-10 px-6 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-sm"
+            className="mt-2 h-10 px-6 bg-primary text-primary-foreground font-bold text-xs"
           >
             <Plus className="w-4 h-4" /> Create First Plan
           </Button>
@@ -365,14 +392,15 @@ export default function StudyPlannerPage() {
               <div
                 key={plan.id}
                 className={cn(
-                  'p-5 rounded-2xl border bg-card transition-all shadow-sm flex items-start gap-4',
-                  plan.completed ? 'border-border/50 opacity-60' : 'border-border hover:border-primary/40 hover:shadow-lg',
+                  'p-5 rounded-xl border bg-card transition-colors flex items-start gap-4',
+                  plan.completed ? 'border-border/50 opacity-60' : 'border-border hover:border-primary/40',
                   !plan.completed && due.overdue && 'border-destructive/40'
                 )}
               >
                 <button
                   onClick={() => handleToggleComplete(plan)}
-                  className="mt-0.5 shrink-0 text-muted-foreground hover:text-emerald-500 transition"
+                  aria-label={plan.completed ? `Mark ${plan.title} as incomplete` : `Mark ${plan.title} as complete`}
+                  className="mt-0.5 shrink-0 text-muted-foreground hover:text-emerald-600 transition outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full min-h-10 min-w-10 flex items-center justify-center"
                   title={plan.completed ? 'Mark incomplete' : 'Mark complete'}
                 >
                   {plan.completed ? (
@@ -407,12 +435,12 @@ export default function StudyPlannerPage() {
                       Due {formatDueDate(plan.dueDate)}
                     </span>
                     {!plan.completed && (
-                      <span className={cn('font-bold', due.overdue ? 'text-destructive' : 'text-emerald-600 dark:text-emerald-400')}>
+                      <span className={cn('font-bold', due.overdue ? 'text-destructive' : 'text-emerald-700 dark:text-emerald-400')}>
                         {due.text}
                       </span>
                     )}
                     {plan.completed && plan.completedAt && (
-                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                      <span className="text-emerald-700 dark:text-emerald-400 font-bold">
                         Completed {new Date(plan.completedAt).toLocaleDateString()}
                       </span>
                     )}
@@ -420,9 +448,10 @@ export default function StudyPlannerPage() {
                 </div>
 
                 <button
-                  onClick={() => handleDelete(plan.id)}
-                  className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition shrink-0"
+                  onClick={() => handleDelete(plan)}
+                  className="min-h-10 min-w-10 p-0 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring flex items-center justify-center"
                   title="Delete plan"
+                  aria-label={`Delete plan ${plan.title}`}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -431,6 +460,25 @@ export default function StudyPlannerPage() {
           })}
         </div>
       )}
+
+      {/* Delete-plan confirmation with scope summary + Undo window */}
+      <ConfirmDialog
+        open={planToDelete !== null}
+        title="Delete this plan?"
+        body={
+          planToDelete && (
+            <span>
+              <strong className="text-foreground">{planToDelete.title}</strong>
+              <span className="font-mono text-[11px]"> · due {formatDueDate(planToDelete.dueDate)}</span>
+              <br />
+              Its schedule and completion history go with it. This can&apos;t be undone after the Undo window closes.
+            </span>
+          )
+        }
+        confirmLabel="Delete plan"
+        onConfirm={confirmDelete}
+        onClose={() => setPlanToDelete(null)}
+      />
     </div>
   )
 }

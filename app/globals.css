@@ -93,7 +93,8 @@
   --card-foreground: #fafafa;
   --popover: #18181b;
   --popover-foreground: #fafafa;
-  --primary: #6366f1;
+  /* Fill role: white text hits 6.29:1. Small text uses --accent instead. */
+  --primary: #4f46e5;
   --primary-foreground: #ffffff;
   --secondary: #1f1f23;
   --secondary-foreground: #fafafa;
@@ -112,7 +113,7 @@
   --chart-5: #312e81;
   --sidebar: #101013;
   --sidebar-foreground: #fafafa;
-  --sidebar-primary: #6366f1;
+  --sidebar-primary: #4f46e5;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #1c1c20;
   --sidebar-accent-foreground: #fafafa;
@@ -168,6 +169,14 @@
     background: var(--border);
   }
 
+  /* Undo-toast countdown — linear shrink, hidden under reduced motion */
+  .toast-progress {
+    transform-origin: left;
+    animation-name: toast-progress;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+
   /* Paper texture — subtle grain for hero paper only */
   .paper-grain {
     position: relative;
@@ -180,5 +189,14 @@
     opacity: 0.03;
     background-image: radial-gradient(circle at 1px 1px, var(--foreground) 1px, transparent 0);
     background-size: 20px 20px;
+  }
+}
+
+@keyframes toast-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
   }
 }

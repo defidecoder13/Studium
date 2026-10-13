@@ -36,7 +36,7 @@ export default async function BookmarksPage() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-3xl font-heading font-bold text-foreground tracking-tight flex items-center gap-2">
-            <BookmarkIcon className="w-8 h-8 text-primary" />
+            <BookmarkIcon className="w-8 h-8 text-accent" />
             Bookmarks
           </h1>
           <p className="text-sm text-muted-foreground">View your saved highlights, snippets, and personal notes.</p>
@@ -62,9 +62,9 @@ export default async function BookmarksPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {bookmarks.map((bm) => (
-            <div key={bm.id} className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-md transition-all flex flex-col relative group">
+            <div key={bm.id} className="p-5 rounded-xl border border-border bg-card transition-colors flex flex-col relative group">
               <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-accent text-xs font-semibold uppercase tracking-wider">
                   <FileText className="w-3.5 h-3.5" />
                   Page {bm.pageNumber}
                 </div>
@@ -89,7 +89,7 @@ export default async function BookmarksPage() {
               )}
 
               <div className="pt-4 border-t border-border/50 flex items-center justify-end">
-                <Link href={`/app/reader/${bm.documentId}?page=${bm.pageNumber}`} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                <Link href={`/app/reader/${bm.documentId}?page=${bm.pageNumber}`} className="text-xs font-semibold text-accent hover:underline flex items-center gap-1 group-hover:translate-x-1 transition-transform">
                   <span>Open at Page {bm.pageNumber}</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </Link>

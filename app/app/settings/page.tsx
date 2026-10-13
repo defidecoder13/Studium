@@ -13,12 +13,12 @@ import {
   Laptop,
   Key,
   Trash2,
-  Sparkles,
   Moon,
   Sun,
   Monitor,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { useTheme, type Theme } from '@/components/theme-provider'
 import { useClerk, useUser } from '@clerk/nextjs'
@@ -47,8 +47,6 @@ export default function SettingsPage() {
 
   // Preferences Form States
   const [themePreference, setThemePreference] = useState<'dark' | 'light' | 'system'>('dark')
-  const [defaultSummaryMode, setDefaultSummaryMode] = useState<'quick' | 'detailed'>('quick')
-  const [citationStrictness, setCitationStrictness] = useState<'exact' | 'flexible'>('exact')
 
   // Security: password change state
   const [currentPassword, setCurrentPassword] = useState('')
@@ -58,6 +56,10 @@ export default function SettingsPage() {
   // Danger zone busy states
   const [isClearingDocs, setIsClearingDocs] = useState(false)
   const [isDeletingAccount, setIsDeletingAccount] = useState(false)
+  // Type-to-confirm dialogs: these actions can't be undone, so Undo is
+  // dishonest here — explicit typed consent replaces the native confirms.
+  const [showClearDialog, setShowClearDialog] = useState(false)
+  const [showDeleteAccountDialog, setShowDeleteAccountDialog] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -79,8 +81,6 @@ export default function SettingsPage() {
             setThemePreference(s.themePreference)
             setTheme(s.themePreference as Theme)
           }
-          if (s.defaultSummaryMode) setDefaultSummaryMode(s.defaultSummaryMode)
-          if (s.citationStrictness) setCitationStrictness(s.citationStrictness)
         }
       })
       .catch((e) => console.warn('Could not load settings:', e))
@@ -102,8 +102,6 @@ export default function SettingsPage() {
           notifyDailySummary,
           notifyIndexingDone,
           themePreference,
-          defaultSummaryMode,
-          citationStrictness,
         }),
       })
       if (!res.ok) throw new Error('Save failed')
@@ -147,11 +145,11 @@ export default function SettingsPage() {
   }
 
   const handleClearDocuments = async () => {
-    if (!confirm('This will permanently delete ALL documents, bookmarks, quizzes, and flashcards from your library. Continue?')) return
     setIsClearingDocs(true)
     try {
       const res = await fetch('/api/documents?all=true&confirm=DELETE', { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to clear documents')
+      setShowClearDialog(false)
       setSaveStatus('All documents and study data cleared.')
     } catch {
       setSaveStatus('Failed to clear documents. Please try again.')
@@ -162,8 +160,6 @@ export default function SettingsPage() {
   }
 
   const handleDeleteAccount = async () => {
-    if (!confirm('This permanently deletes your account and ALL study data. This cannot be undone. Continue?')) return
-    if (!confirm('Last chance — are you absolutely sure? There is no recovery.')) return
     setIsDeletingAccount(true)
     try {
       const res = await fetch('/api/account?confirm=DELETE', { method: 'DELETE' })
@@ -172,6 +168,7 @@ export default function SettingsPage() {
       router.push('/')
       router.refresh()
     } catch {
+      setShowDeleteAccountDialog(false)
       setSaveStatus('Failed to delete account. Please try again.')
       setIsDeletingAccount(false)
       setTimeout(() => setSaveStatus(null), 3000)
@@ -198,7 +195,7 @@ export default function SettingsPage() {
               'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold animate-in fade-in duration-200',
               saveStatus.startsWith('Failed')
                 ? 'bg-destructive/10 border border-destructive/30 text-destructive'
-                : 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-500'
+                : 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
             )}
           >
             {saveStatus.startsWith('Failed') ? <AlertTriangle className="w-4 h-4" /> : <Check className="w-4 h-4" />}
@@ -216,7 +213,7 @@ export default function SettingsPage() {
             { id: 'profile', label: 'Profile Information', icon: User },
             { id: 'security', label: 'Security & Auth', icon: Shield },
             { id: 'notifications', label: 'Email & Alerts', icon: Bell },
-            { id: 'preferences', label: 'AI & Theme Preferences', icon: Sliders },
+            { id: 'preferences', label: 'Appearance', icon: Sliders },
             { id: 'danger', label: 'Danger Zone', icon: AlertTriangle, isDanger: true },
           ].map((tab) => {
             const Icon = tab.icon
@@ -226,11 +223,11 @@ export default function SettingsPage() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as SettingsTab)}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all text-left',
+                  'w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all text-left outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   isActive
                     ? tab.isDanger
-                      ? 'bg-destructive text-destructive-foreground shadow-sm'
-                      : 'bg-foreground text-background shadow-sm'
+                      ? 'bg-destructive/10 text-destructive'
+                      : 'bg-primary/10 text-accent'
                     : tab.isDanger
                     ? 'text-destructive hover:bg-destructive/10'
                     : 'text-muted-foreground hover:text-foreground hover:bg-card border border-transparent'
@@ -244,7 +241,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Right Tab Content Container (8 Cols) */}
-        <div className="md:col-span-8 p-6 sm:p-8 rounded-3xl border border-border bg-card shadow-sm space-y-6">
+        <div className="md:col-span-8 p-6 sm:p-8 rounded-xl border border-border bg-card space-y-6">
           
           {/* TAB 1: PROFILE INFORMATION */}
           {activeTab === 'profile' && (
@@ -256,7 +253,7 @@ export default function SettingsPage() {
 
               {/* Avatar Simulation */}
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary font-heading font-bold text-xl flex items-center justify-center border border-primary/30 shadow-inner">
+                <div className="w-16 h-16 rounded-xl bg-primary/10 text-accent font-heading font-bold text-xl flex items-center justify-center border border-primary/30">
                   {fullName
                     .split(' ')
                     .map((n) => n[0])
@@ -264,12 +261,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-1">
                   <div className="text-sm font-bold text-foreground">Profile Avatar</div>
-                  <div className="text-xs text-muted-foreground font-mono">PNG, JPG or GIF. Max 5MB.</div>
-                  <div className="pt-1">
-                    <Button size="sm" variant="outline" className="h-8 text-xs rounded-lg border-border">
-                      Change Photo
-                    </Button>
-                  </div>
+                  <div className="text-xs text-muted-foreground font-mono">Your initials appear across the workspace.</div>
                 </div>
               </div>
 
@@ -282,7 +274,7 @@ export default function SettingsPage() {
                       type="text"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      className="w-full bg-background border border-border rounded-xl px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition"
+                      className="w-full bg-background border border-border rounded-lg px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -292,7 +284,7 @@ export default function SettingsPage() {
                       value={email}
                       disabled
                       title="Email is tied to your account and cannot be changed here"
-                      className="w-full bg-muted/40 border border-border rounded-xl px-3.5 py-2.5 text-muted-foreground cursor-not-allowed focus:outline-none transition"
+                      className="w-full bg-muted/40 border border-border rounded-lg px-3.5 py-2.5 text-muted-foreground cursor-not-allowed focus:outline-none transition"
                     />
                   </div>
                 </div>
@@ -304,7 +296,7 @@ export default function SettingsPage() {
                       type="text"
                       value={institution}
                       onChange={(e) => setInstitution(e.target.value)}
-                      className="w-full bg-background border border-border rounded-xl px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition"
+                      className="w-full bg-background border border-border rounded-lg px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -313,7 +305,7 @@ export default function SettingsPage() {
                       type="text"
                       value={major}
                       onChange={(e) => setMajor(e.target.value)}
-                      className="w-full bg-background border border-border rounded-xl px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition"
+                      className="w-full bg-background border border-border rounded-lg px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition"
                     />
                   </div>
                 </div>
@@ -324,13 +316,13 @@ export default function SettingsPage() {
                     rows={3}
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
-                    className="w-full bg-background border border-border rounded-xl p-3.5 text-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition resize-none leading-relaxed"
+                    className="w-full bg-background border border-border rounded-lg p-3.5 text-foreground focus:outline-none focus:ring-1 focus:ring-foreground transition resize-none leading-relaxed"
                   />
                 </div>
               </div>
 
               <div className="pt-4 border-t border-border flex justify-end">
-                <Button onClick={handleSave} className="rounded-xl px-6 bg-foreground text-background hover:bg-foreground/90 font-semibold gap-2 text-xs h-10 shadow-sm">
+                <Button onClick={handleSave} className="px-6 bg-foreground text-background hover:bg-foreground/90 font-semibold gap-2 text-xs h-10">
                   <Save className="w-3.5 h-3.5" />
                   <span>Save Profile</span>
                 </Button>
@@ -348,7 +340,7 @@ export default function SettingsPage() {
 
               <div className="space-y-6">
                 {/* 2FA Card */}
-                <div className="p-4 rounded-2xl border border-border bg-background flex items-center justify-between gap-4">
+                <div className="p-4 rounded-xl border border-border bg-background flex items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="text-sm font-bold text-foreground flex items-center gap-2">
                       <Shield className="w-4 h-4 text-emerald-500" />
@@ -358,12 +350,15 @@ export default function SettingsPage() {
                   </div>
                   <button
                     onClick={() => setTwoFactor(!twoFactor)}
+                    role="switch"
+                    aria-checked={twoFactor}
+                    aria-label="Two-factor authentication"
                     className={cn(
-                      'w-12 h-6 rounded-full transition-colors relative px-0.5 flex items-center shrink-0',
-                      twoFactor ? 'bg-emerald-500 justify-end' : 'bg-muted justify-start'
+                      'w-14 h-8 rounded-full transition-colors relative px-1 flex items-center shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      twoFactor ? 'bg-primary justify-end' : 'bg-muted justify-start'
                     )}
                   >
-                    <div className="w-5 h-5 rounded-full bg-white shadow-md transition-transform" />
+                    <div className="w-6 h-6 rounded-full bg-white transition-transform" />
                   </button>
                 </div>
 
@@ -377,7 +372,7 @@ export default function SettingsPage() {
                       onChange={(e) => setCurrentPassword(e.target.value)}
                       placeholder="Current Password"
                       autoComplete="current-password"
-                      className="w-full bg-background border border-border rounded-xl px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="w-full bg-background border border-border rounded-lg px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     <input
                       type="password"
@@ -385,20 +380,20 @@ export default function SettingsPage() {
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="New Password (min 8 characters)"
                       autoComplete="new-password"
-                      className="w-full bg-background border border-border rounded-xl px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="w-full bg-background border border-border rounded-lg px-3.5 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                   </div>
                   {passwordStatus && (
                     <p
                       className={cn(
                         'text-xs font-medium',
-                        passwordStatus.includes('successfully') ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
+                        passwordStatus.includes('successfully') ? 'text-emerald-700 dark:text-emerald-400' : 'text-destructive'
                       )}
                     >
                       {passwordStatus}
                     </p>
                   )}
-                  <Button size="sm" variant="outline" onClick={handleChangePassword} className="rounded-xl text-xs gap-1.5">
+                  <Button size="sm" variant="outline" onClick={handleChangePassword} className="text-xs gap-1.5">
                     <Key className="w-3.5 h-3.5" /> Update Password
                   </Button>
                 </div>
@@ -406,17 +401,17 @@ export default function SettingsPage() {
                 {/* Active Sessions */}
                 <div className="space-y-3 pt-4 border-t border-border">
                   <div className="text-xs font-mono font-bold text-foreground uppercase tracking-wider">Active Device Sessions</div>
-                  <div className="p-4 rounded-2xl border border-border bg-background flex items-center justify-between">
+                  <div className="p-4 rounded-xl border border-border bg-background flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                      <div className="w-9 h-9 rounded-xl bg-primary/10 text-accent flex items-center justify-center">
                         <Laptop className="w-4 h-4" />
                       </div>
                       <div>
-                        <div className="text-xs font-bold text-foreground">MacBook Pro 16&quot; — Chrome</div>
-                        <div className="text-[11px] font-mono text-muted-foreground">San Francisco, CA • Active Right Now</div>
+                        <div className="text-xs font-bold text-foreground">This device</div>
+                        <div className="text-[11px] font-mono text-muted-foreground">Signed in now</div>
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 font-mono text-[10px] font-bold">
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-mono text-[10px] font-bold">
                       Current Session
                     </span>
                   </div>
@@ -430,50 +425,53 @@ export default function SettingsPage() {
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="space-y-1 border-b border-border pb-4">
                 <h3 className="font-heading font-bold text-lg text-foreground">Email Notifications & Alerts</h3>
-                <p className="text-xs text-muted-foreground">Customize when AI Copilot sends study reminders or summary digests.</p>
+                <p className="text-xs text-muted-foreground">Choose which study reminders and digests land in your inbox.</p>
               </div>
 
               <div className="space-y-4">
                 {[
                   {
-                    title: 'Active Recall & Quiz Reinforcement Reminders',
-                    desc: 'Receive periodic email notifications when a studied topic accuracy dips below 75%.',
+                    title: 'Quiz reminders',
+                    desc: 'A nudge when your accuracy on a studied topic dips below 75%.',
                     state: notifyQuizReminders,
                     setter: setNotifyQuizReminders,
                   },
                   {
-                    title: 'Daily AI Study Digest Summary',
-                    desc: 'Receive an automated morning email synthesizing your previous day study progress and formulas.',
+                    title: 'Daily study digest',
+                    desc: "One morning email with yesterday's progress.",
                     state: notifyDailySummary,
                     setter: setNotifyDailySummary,
                   },
                   {
-                    title: 'Document Indexing Completed Alerts',
-                    desc: 'Notify when large uploaded textbooks finish vector embedding generation.',
+                    title: 'Upload finished alerts',
+                    desc: 'An email when a large upload finishes processing and is ready.',
                     state: notifyIndexingDone,
                     setter: setNotifyIndexingDone,
                   },
                 ].map((item, idx) => (
-                  <div key={idx} className="p-4 rounded-2xl border border-border bg-background flex items-center justify-between gap-4">
+                  <div key={idx} className="p-4 rounded-xl border border-border bg-background flex items-center justify-between gap-4">
                     <div className="space-y-1">
                       <div className="text-xs sm:text-sm font-bold text-foreground">{item.title}</div>
                       <div className="text-xs text-muted-foreground leading-relaxed">{item.desc}</div>
                     </div>
                     <button
                       onClick={() => item.setter(!item.state)}
+                      role="switch"
+                      aria-checked={item.state}
+                      aria-label={item.title}
                       className={cn(
-                        'w-12 h-6 rounded-full transition-colors relative px-0.5 flex items-center shrink-0',
-                        item.state ? 'bg-foreground justify-end' : 'bg-muted justify-start'
+                        'w-14 h-8 rounded-full transition-colors relative px-1 flex items-center shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        item.state ? 'bg-primary justify-end' : 'bg-muted justify-start'
                       )}
                     >
-                      <div className="w-5 h-5 rounded-full bg-background shadow-md transition-transform" />
+                      <div className="w-6 h-6 rounded-full bg-white transition-transform" />
                     </button>
                   </div>
                 ))}
               </div>
 
               <div className="pt-4 border-t border-border flex justify-end">
-                <Button onClick={handleSave} className="rounded-xl px-6 bg-foreground text-background hover:bg-foreground/90 font-semibold gap-2 text-xs h-10 shadow-sm">
+                <Button onClick={handleSave} className="px-6 bg-foreground text-background hover:bg-foreground/90 font-semibold gap-2 text-xs h-10">
                   <Save className="w-3.5 h-3.5" />
                   <span>Save Preferences</span>
                 </Button>
@@ -485,8 +483,8 @@ export default function SettingsPage() {
           {activeTab === 'preferences' && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="space-y-1 border-b border-border pb-4">
-                <h3 className="font-heading font-bold text-lg text-foreground">AI Copilot & Theme Preferences</h3>
-                <p className="text-xs text-muted-foreground">Adjust user interface styling and citation verification behaviors.</p>
+                <h3 className="font-heading font-bold text-lg text-foreground">Appearance</h3>
+                <p className="text-xs text-muted-foreground">Adjust how Studium looks on this device.</p>
               </div>
 
               <div className="space-y-6">
@@ -509,9 +507,9 @@ export default function SettingsPage() {
                             setTheme(t.id as Theme)
                           }}
                           className={cn(
-                            'p-3.5 rounded-xl border flex flex-col items-center gap-2 transition text-xs font-semibold',
+                            'p-3.5 rounded-xl border flex flex-col items-center gap-2 transition text-xs font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring',
                             isChosen
-                              ? 'border-foreground bg-foreground text-background shadow-sm'
+                              ? 'border-primary bg-primary/10 text-foreground'
                               : 'border-border bg-background hover:bg-muted text-foreground'
                           )}
                         >
@@ -523,56 +521,12 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Default Summary Mode */}
-                <div className="space-y-2.5 pt-2">
-                  <label className="text-xs font-mono font-bold text-foreground uppercase tracking-wider">Default Summary Generation Mode</label>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <button
-                      onClick={() => setDefaultSummaryMode('quick')}
-                      className={cn(
-                        'p-4 rounded-xl border text-left transition space-y-1',
-                        defaultSummaryMode === 'quick' ? 'border-foreground bg-background shadow-sm' : 'border-border/80 bg-background hover:bg-muted/40'
-                      )}
-                    >
-                      <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-accent" /> ⚡ Quick Executive Summary
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">Synthesizes only the core 3-5 takeaways per page.</div>
-                    </button>
-
-                    <button
-                      onClick={() => setDefaultSummaryMode('detailed')}
-                      className={cn(
-                        'p-4 rounded-xl border text-left transition space-y-1',
-                        defaultSummaryMode === 'detailed' ? 'border-foreground bg-background shadow-sm' : 'border-border/80 bg-background hover:bg-muted/40'
-                      )}
-                    >
-                      <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                        <Sliders className="w-3.5 h-3.5 text-primary" /> 📑 Detailed Comprehensive
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">Includes full mathematical formulas, theorems, and definitions.</div>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Citation Strictness */}
-                <div className="space-y-2.5 pt-2">
-                  <label className="text-xs font-mono font-bold text-foreground uppercase tracking-wider">AI Citation Strictness</label>
-                  <select
-                    value={citationStrictness}
-                    onChange={(e) => setCitationStrictness(e.target.value as 'exact' | 'flexible')}
-                    className="w-full h-10 rounded-xl border border-border bg-background px-3.5 text-xs font-semibold text-foreground focus:outline-none"
-                  >
-                    <option value="exact">Strict Page-Exact Verification (Recommended for Academics)</option>
-                    <option value="flexible">Flexible Multi-Document Concept Synthesis</option>
-                  </select>
-                </div>
               </div>
 
               <div className="pt-4 border-t border-border flex justify-end">
-                <Button onClick={handleSave} className="rounded-xl px-6 bg-foreground text-background hover:bg-foreground/90 font-semibold gap-2 text-xs h-10 shadow-sm">
+                <Button onClick={handleSave} className="px-6 bg-foreground text-background hover:bg-foreground/90 font-semibold gap-2 text-xs h-10">
                   <Save className="w-3.5 h-3.5" />
-                  <span>Save AI Preferences</span>
+                  <span>Save appearance</span>
                 </Button>
               </div>
             </div>
@@ -583,37 +537,37 @@ export default function SettingsPage() {
             <div className="space-y-6 animate-in fade-in duration-200">
               <div className="space-y-1 border-b border-destructive/30 pb-4">
                 <h3 className="font-heading font-bold text-lg text-destructive">Danger Zone</h3>
-                <p className="text-xs text-muted-foreground">Irreversible account and vector database clearing actions.</p>
+                <p className="text-xs text-muted-foreground">Irreversible deletion — for your account and all study data.</p>
               </div>
 
               <div className="space-y-4">
-                <div className="p-4 rounded-2xl border border-destructive/30 bg-destructive/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <div className="text-sm font-bold text-foreground">Clear All Indexed Study Documents</div>
+                    <div className="text-sm font-bold text-foreground">Clear your entire library</div>
                     <div className="text-xs text-muted-foreground">Removes all uploaded documents, bookmarks, quizzes, and flashcards from your library.</div>
                   </div>
                   <Button
                     variant="outline"
-                    onClick={handleClearDocuments}
+                    onClick={() => setShowClearDialog(true)}
                     disabled={isClearingDocs}
-                    className="rounded-xl border-destructive/40 text-destructive hover:bg-destructive/10 text-xs shrink-0 font-semibold"
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10 text-xs shrink-0 font-semibold"
                   >
-                    {isClearingDocs ? 'Clearing...' : 'Clear Documents'}
+                    <span>Clear everything</span>
                   </Button>
                 </div>
 
-                <div className="p-4 rounded-2xl border border-destructive/30 bg-destructive/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="text-sm font-bold text-destructive">Delete Academic Account Permanently</div>
                     <div className="text-xs text-muted-foreground">Deactivates authentication tokens and purges all study records from our servers immediately.</div>
                   </div>
                   <Button
-                    onClick={handleDeleteAccount}
+                    onClick={() => setShowDeleteAccountDialog(true)}
                     disabled={isDeletingAccount}
-                    className="rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs shrink-0 font-semibold gap-1.5"
+                    className="bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs shrink-0 font-semibold gap-1.5"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>{isDeletingAccount ? 'Deleting...' : 'Delete Account'}</span>
+                    <span>Delete Account</span>
                   </Button>
                 </div>
               </div>
@@ -623,6 +577,46 @@ export default function SettingsPage() {
         </div>
 
       </div>
+
+      {/* Clear-all: type DELETE. No Undo exists for a full wipe — typed consent only. */}
+      <ConfirmDialog
+        open={showClearDialog}
+        title="Clear your entire library?"
+        body={
+          <span>
+            This permanently removes <strong className="text-foreground">every document and its index</strong>,
+            plus all bookmarks, quiz records, and flashcard decks. There is no Undo for a full wipe.
+          </span>
+        }
+        confirmLabel="Clear everything"
+        busyLabel="Clearing…"
+        busy={isClearingDocs}
+        requireText="DELETE"
+        onConfirm={handleClearDocuments}
+        onClose={() => {
+          if (!isClearingDocs) setShowClearDialog(false)
+        }}
+      />
+
+      {/* Delete account: type DELETE. Session ends here — recovery is impossible. */}
+      <ConfirmDialog
+        open={showDeleteAccountDialog}
+        title="Delete your account?"
+        body={
+          <span>
+            Your profile, every document, and all study data are purged from our servers immediately. You will be
+            signed out. <strong className="text-foreground">There is no recovery.</strong>
+          </span>
+        }
+        confirmLabel="Delete account"
+        busyLabel="Deleting…"
+        busy={isDeletingAccount}
+        requireText="DELETE"
+        onConfirm={handleDeleteAccount}
+        onClose={() => {
+          if (!isDeletingAccount) setShowDeleteAccountDialog(false)
+        }}
+      />
 
     </div>
   )

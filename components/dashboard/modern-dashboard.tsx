@@ -19,7 +19,7 @@ const DocumentReader = dynamic(() => import('@/components/reader/document-reader
     <div className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center gap-4 animate-in fade-in duration-200">
       <div className="w-10 h-10 border-[3px] border-foreground border-t-transparent rounded-full animate-spin" />
       <div className="text-base font-heading font-bold text-foreground">Loading Document Workspace...</div>
-      <div className="text-xs text-muted-foreground font-mono">Initializing interactive canvas, AI chat, and active recall engine...</div>
+      <div className="text-xs text-muted-foreground font-mono">Opening your document…</div>
     </div>
   )
 })
@@ -90,7 +90,7 @@ export function ModernDashboard({ user }: { user?: UserProps }) {
       {/* Welcome Section — no emoji, editorial */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-border">
         <div className="space-y-1">
-          <h1 className="text-[1.75rem] font-display font-semibold tracking-[-0.02em] text-foreground">
+          <h1 className="text-[1.75rem] font-heading font-bold tracking-tight text-foreground">
             Welcome back, {user?.name?.split(' ')[0] || 'User'}
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -105,11 +105,6 @@ export function ModernDashboard({ user }: { user?: UserProps }) {
 
       {/* Quick Actions — hierarchy, not 4 identical cards */}
       <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <span className="h-px w-6 bg-foreground" />
-          <span className="text-[11px] font-mono tracking-[0.16em] text-muted-foreground">QUICK ACTIONS</span>
-        </div>
-        
         <div className="grid grid-cols-12 gap-3 md:gap-4">
           <Link href="/app/library?upload=1" className="col-span-12 md:col-span-5 block group">
             <div className="p-5 rounded-xl border border-dashed border-border bg-card hover:border-foreground/20 hover:bg-muted/20 transition flex items-center gap-4 h-full">
@@ -131,7 +126,7 @@ export function ModernDashboard({ user }: { user?: UserProps }) {
               </div>
               <div>
                 <div className="font-semibold text-sm text-foreground">Search</div>
-                <div className="text-xs text-muted-foreground">⌘K</div>
+                <div className="text-xs text-muted-foreground">Filenames, tags & pages</div>
               </div>
             </div>
           </Link>
@@ -170,7 +165,7 @@ export function ModernDashboard({ user }: { user?: UserProps }) {
             <h2 className="text-xl font-heading font-bold text-foreground">Recent Documents</h2>
             <p className="text-xs text-muted-foreground">Jump back into your study materials</p>
           </div>
-          <Link href="/app/library" className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
+          <Link href="/app/library" className="text-xs font-semibold text-accent hover:underline flex items-center gap-1">
             <span>View All in Library</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </Link>
@@ -180,7 +175,7 @@ export function ModernDashboard({ user }: { user?: UserProps }) {
           <div className="rounded-xl border border-border bg-card p-6 animate-in fade-in duration-200">
             <div className="flex items-center gap-3 pb-4 border-b border-border text-xs font-mono text-muted-foreground">
               <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-              <span className="font-semibold text-foreground">Loading recent documents from study repository...</span>
+              <span className="font-semibold text-foreground">Loading recent documents…</span>
             </div>
             <div className="divide-y divide-border animate-pulse">
               {[1, 2, 3].map((i) => (
@@ -226,15 +221,23 @@ export function ModernDashboard({ user }: { user?: UserProps }) {
                   <tr
                     key={doc.id}
                     onClick={() => setActiveReaderDoc({ doc, page: 1 })}
-                    className="hover:bg-muted/40 transition cursor-pointer group"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setActiveReaderDoc({ doc, page: 1 })
+                      }
+                    }}
+                    tabIndex={0}
+                    aria-label={`Open ${doc.title} in the reader`}
+                    className="hover:bg-muted/40 focus-visible:bg-muted/40 transition cursor-pointer group outline-none"
                   >
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 text-accent flex items-center justify-center shrink-0">
                           <FileText className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="font-heading font-bold text-sm text-foreground group-hover:text-primary transition-colors">
+                          <div className="font-heading font-bold text-sm text-foreground group-hover:text-accent transition-colors">
                             {doc.title}
                           </div>
                           <div className="text-[11px] text-muted-foreground font-mono sm:hidden">
@@ -256,8 +259,8 @@ export function ModernDashboard({ user }: { user?: UserProps }) {
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <span className="text-primary font-bold opacity-0 group-hover:opacity-100 transition flex items-center gap-1 text-[11px] uppercase tracking-wider">
-                          Read Hub <ChevronRight className="w-3 h-3" />
+                        <span className="text-accent font-bold opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition flex items-center gap-1 text-[11px] uppercase tracking-wider">
+                          Open reader <ChevronRight className="w-3 h-3" />
                         </span>
                       </div>
                     </td>

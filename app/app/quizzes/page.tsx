@@ -16,6 +16,8 @@ import {
   Sparkles
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { deleteWithUndo } from '@/components/ui/undo-toast'
 import { formatDistanceToNow } from 'date-fns'
 
 interface QuizAttempt {
@@ -49,7 +51,7 @@ export default function QuizzesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [difficultyFilter, setDifficultyFilter] = useState<'ALL' | 'Easy' | 'Medium' | 'Hard'>('ALL')
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [attemptToDelete, setAttemptToDelete] = useState<QuizAttempt | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -68,19 +70,31 @@ export default function QuizzesPage() {
     }
   }, [])
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+  const handleDelete = (quiz: QuizAttempt, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm('Are you sure you want to delete this quiz record?')) return
-    
-    setDeletingId(id)
-    try {
-      await fetch(`/api/quizzes/history?id=${id}`, { method: 'DELETE' })
-      setQuizzes(prev => prev.filter(q => q.id !== id))
-    } catch (err) {
-      console.error('Failed to delete attempt:', err)
-    } finally {
-      setDeletingId(null)
-    }
+    setAttemptToDelete(quiz)
+  }
+
+  const confirmDelete = () => {
+    const quiz = attemptToDelete
+    if (!quiz) return
+    setAttemptToDelete(null)
+    const index = quizzes.findIndex((q) => q.id === quiz.id)
+    deleteWithUndo({
+      remove: () => setQuizzes((prev) => prev.filter((q) => q.id !== quiz.id)),
+      restore: () =>
+        setQuizzes((prev) => {
+          const next = [...prev]
+          next.splice(Math.min(Math.max(index, 0), next.length), 0, quiz)
+          return next
+        }),
+      commit: async () => {
+        const res = await fetch(`/api/quizzes/history?id=${quiz.id}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Delete failed')
+      },
+      title: 'Quiz record deleted',
+      message: `"${quiz.documentTitle}" · ${quiz.score}/${quiz.totalQuestions} will be removed for good.`,
+    })
   }
 
   const filteredQuizzes = quizzes.filter(q => {
@@ -116,8 +130,8 @@ export default function QuizzesPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-2.5">
             <h1 className="text-3xl font-heading font-bold text-foreground tracking-tight flex items-center gap-2.5">
-              <BrainCircuit className="w-8 h-8 text-primary" />
-              <span>Quiz History & Assessment Logs</span>
+              <BrainCircuit className="w-8 h-8 text-accent" />
+              <span>Quiz history</span>
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-muted-foreground">
@@ -127,9 +141,9 @@ export default function QuizzesPage() {
 
         <div className="flex items-center gap-3 shrink-0">
           <Link href="/app/library">
-            <Button className="h-10 px-5 rounded-xl bg-primary text-primary-foreground font-bold shadow-sm hover:opacity-90 transition flex items-center gap-2 text-xs">
+            <Button className="h-10 px-5 bg-primary text-primary-foreground font-bold hover:opacity-90 transition flex items-center gap-2 text-xs">
               <Sparkles className="w-4 h-4" />
-              <span>Take New Quiz</span>
+              <span>Go to Library</span>
             </Button>
           </Link>
         </div>
@@ -137,8 +151,8 @@ export default function QuizzesPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+        <div className="p-5 rounded-xl border border-border bg-card flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-primary/10 text-accent flex items-center justify-center shrink-0">
             <Trophy className="w-6 h-6" />
           </div>
           <div>
@@ -149,8 +163,8 @@ export default function QuizzesPage() {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+        <div className="p-5 rounded-xl border border-border bg-card flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-primary/10 text-accent flex items-center justify-center shrink-0">
             <BrainCircuit className="w-6 h-6" />
           </div>
           <div>
@@ -159,13 +173,13 @@ export default function QuizzesPage() {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm hover:shadow-lg hover:border-primary/40 hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+        <div className="p-5 rounded-xl border border-border bg-card flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-primary/10 text-accent flex items-center justify-center shrink-0">
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
             <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Identified Weak Topics</div>
-            <div className="text-2xl font-heading font-bold text-primary mt-0.5">
+            <div className="text-2xl font-heading font-bold text-accent mt-0.5">
               {Object.keys(topicCounts).length} <span className="text-xs font-normal text-muted-foreground font-sans">topics</span>
             </div>
           </div>
@@ -174,14 +188,14 @@ export default function QuizzesPage() {
 
       {/* Weak Topics Quick Callout Banner */}
       {topWeakTopics.length > 0 && (
-        <div className="p-5 rounded-2xl border border-primary/20 bg-primary/[0.04] space-y-3">
+        <div className="p-5 rounded-xl border border-primary/20 bg-primary/[0.04] space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-primary font-bold text-xs">
+            <div className="flex items-center gap-2 text-accent font-bold text-xs">
               <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>Recommended Priority Revision: Top Weak Topics</span>
+              <span>Revise next: your weakest topics</span>
             </div>
             <Link href="/app/flashcards">
-              <span className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1">
+              <span className="text-[11px] font-bold text-accent hover:underline flex items-center gap-1">
                 Generate Flashcards for Weak Spots &rarr;
               </span>
             </Link>
@@ -190,10 +204,10 @@ export default function QuizzesPage() {
             {topWeakTopics.map(([topic, count]) => (
               <span 
                 key={topic}
-                className="px-3 py-1 rounded-lg bg-background/80 dark:bg-card border border-primary/20 text-foreground text-xs font-medium shadow-sm flex items-center gap-1.5"
+                className="px-3 py-1 rounded-lg bg-background/80 dark:bg-card border border-primary/20 text-foreground text-xs font-medium flex items-center gap-1.5"
               >
                 <span>{topic}</span>
-                <span className="px-1.5 py-0.5 rounded bg-primary/15 text-primary text-[10px] font-mono font-bold">
+                <span className="px-1.5 py-0.5 rounded bg-primary/15 text-accent text-[10px] font-mono font-bold">
                   Missed {count}x
                 </span>
               </span>
@@ -209,9 +223,10 @@ export default function QuizzesPage() {
           <input
             type="text"
             placeholder="Search quizzes or topics..."
+            aria-label="Search quizzes or topics"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-10 pr-4 rounded-xl bg-card border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 transition placeholder:text-muted-foreground"
+            className="w-full h-10 pl-10 pr-4 rounded-lg bg-card border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 transition placeholder:text-muted-foreground"
           />
         </div>
 
@@ -224,7 +239,7 @@ export default function QuizzesPage() {
             <button
               key={diff}
               onClick={() => setDifficultyFilter(diff)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${difficultyFilter === diff ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}
+              className={`px-3 py-2.5 rounded-lg text-xs font-bold transition outline-none focus-visible:ring-2 focus-visible:ring-ring ${difficultyFilter === diff ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-muted-foreground hover:text-foreground'}`}
             >
               {diff}
             </button>
@@ -236,7 +251,7 @@ export default function QuizzesPage() {
       {isLoading ? (
         <div className="space-y-4 animate-pulse">
           {[1, 2, 3].map(i => (
-            <div key={i} className="p-6 rounded-2xl border border-border bg-card space-y-3">
+            <div key={i} className="p-6 rounded-xl border border-border bg-card space-y-3">
               <div className="flex items-center justify-between">
                 <div className="w-48 h-5 rounded bg-muted" />
                 <div className="w-20 h-5 rounded bg-muted" />
@@ -246,8 +261,8 @@ export default function QuizzesPage() {
           ))}
         </div>
       ) : filteredQuizzes.length === 0 ? (
-        <div className="p-12 md:p-16 rounded-3xl border border-dashed border-border bg-card/40 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+        <div className="p-12 md:p-16 rounded-xl border border-dashed border-border bg-card/40 flex flex-col items-center justify-center text-center space-y-4">
+          <div className="w-16 h-16 rounded-xl bg-primary/10 text-accent flex items-center justify-center">
             <BrainCircuit className="w-8 h-8" />
           </div>
           <div className="space-y-1 max-w-md">
@@ -257,7 +272,7 @@ export default function QuizzesPage() {
             </p>
           </div>
           <Link href="/app/library">
-            <Button className="mt-2 h-10 px-6 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-sm">
+            <Button className="mt-2 h-10 px-6 bg-primary text-primary-foreground font-bold text-xs">
               Go To Library
             </Button>
           </Link>
@@ -267,23 +282,23 @@ export default function QuizzesPage() {
           {filteredQuizzes.map(quiz => {
             const isVideo = quiz.document?.fileType === 'YouTube Video'
             const accuracyColor = quiz.accuracy >= 80 
-              ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
+              ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
               : quiz.accuracy >= 60 
-              ? 'text-primary bg-primary/10 border-primary/20' 
+              ? 'text-accent bg-primary/10 border-primary/20' 
               : 'text-destructive bg-destructive/10 border-destructive/20'
             const accuracyBar = quiz.accuracy >= 80 ? 'bg-emerald-500' : quiz.accuracy >= 60 ? 'bg-primary' : 'bg-destructive'
 
             return (
               <div
                 key={quiz.id}
-                className="p-6 rounded-2xl border border-border bg-card hover:border-primary/40 hover:shadow-lg transition-all duration-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 group"
+                className="p-6 rounded-xl border border-border bg-card hover:border-primary/40 transition-colors duration-200 flex flex-col md:flex-row md:items-center justify-between gap-6 group"
               >
                 <div className="space-y-3 flex-1">
                   
                   {/* Top Metadata row */}
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="px-2.5 py-0.5 rounded-md bg-muted text-muted-foreground text-[10px] font-mono font-bold flex items-center gap-1.5">
-                      {isVideo ? <Video className="w-3 h-3 text-destructive" /> : <BookOpen className="w-3 h-3 text-primary" />}
+                      {isVideo ? <Video className="w-3 h-3 text-destructive" /> : <BookOpen className="w-3 h-3 text-accent" />}
                       <span>{quiz.documentTitle}</span>
                     </span>
 
@@ -306,7 +321,7 @@ export default function QuizzesPage() {
                   {/* Title & Score summary */}
                   <div className="flex items-center justify-between md:justify-start gap-4">
                     <div className="space-y-0.5">
-                      <h3 className="font-heading font-bold text-base text-foreground group-hover:text-primary transition-colors">
+                      <h3 className="font-heading font-bold text-base text-foreground group-hover:text-accent transition-colors">
                         Score: {quiz.score} / {quiz.totalQuestions} Questions Correct
                       </h3>
                       {quiz.timeTakenSeconds > 0 && (
@@ -333,13 +348,13 @@ export default function QuizzesPage() {
                   {Array.isArray(quiz.weakTopics) && quiz.weakTopics.length > 0 && (
                     <div className="pt-2 border-t border-border/60 flex flex-wrap items-center gap-2">
                       <span className="text-[11px] font-mono font-bold text-muted-foreground flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3 text-primary" />
+                        <AlertTriangle className="w-3 h-3 text-accent" />
                         <span>Missed Concepts:</span>
                       </span>
                       {quiz.weakTopics.map((topic, i) => (
                         <span
                           key={i}
-                          className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[11px] font-medium border border-primary/20"
+                          className="px-2 py-0.5 rounded bg-primary/10 text-accent text-[11px] font-medium border border-primary/20"
                         >
                           {topic}
                         </span>
@@ -352,17 +367,17 @@ export default function QuizzesPage() {
                 {/* Right Action buttons */}
                 <div className="flex items-center gap-3 shrink-0 self-end md:self-center border-t md:border-t-0 pt-3 md:pt-0 w-full md:w-auto justify-end">
                   <button
-                    onClick={e => handleDelete(quiz.id, e)}
-                    disabled={deletingId === quiz.id}
-                    className="w-9 h-9 rounded-xl border border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 text-muted-foreground flex items-center justify-center transition"
+                    onClick={e => handleDelete(quiz, e)}
+                    className="min-h-10 min-w-10 rounded-lg border border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 text-muted-foreground flex items-center justify-center transition outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     title="Delete Quiz Record"
+                    aria-label={`Delete quiz record for ${quiz.documentTitle}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
 
                   {quiz.documentId && (
                     <Link href={`/app/reader/${quiz.documentId}`}>
-                      <Button size="sm" className="h-9 px-4 rounded-xl text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition flex items-center gap-1.5">
+                      <Button size="sm" className="h-9 px-4 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition flex items-center gap-1.5">
                         <span>Review Document</span>
                         <ChevronRight className="w-3.5 h-3.5" />
                       </Button>
@@ -374,6 +389,30 @@ export default function QuizzesPage() {
           })}
         </div>
       )}
+
+      {/* Delete-record confirmation with scope summary + Undo window */}
+      <ConfirmDialog
+        open={attemptToDelete !== null}
+        title="Delete this quiz record?"
+        body={
+          attemptToDelete && (
+            <span>
+              <strong className="text-foreground">{attemptToDelete.documentTitle}</strong>
+              <span className="font-mono text-[11px]">
+                {' '}
+                · {attemptToDelete.score}/{attemptToDelete.totalQuestions} · {attemptToDelete.accuracy}% ·{' '}
+                {attemptToDelete.difficulty}
+              </span>
+              <br />
+              The score, timing, and missed topics go with it. This can&apos;t be undone after the Undo window
+              closes.
+            </span>
+          )
+        }
+        confirmLabel="Delete record"
+        onConfirm={confirmDelete}
+        onClose={() => setAttemptToDelete(null)}
+      />
 
     </div>
   )

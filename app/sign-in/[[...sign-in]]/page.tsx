@@ -10,14 +10,14 @@ export default function SignInPage() {
         <div className="hidden lg:flex flex-col justify-between p-10 bg-secondary/50 border-r border-border">
           <div className="relative space-y-8">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-black dark:bg-zinc-900 border border-zinc-800 flex items-center justify-center shadow-sm">
-                <StudiumLogo size={24} className="text-white" />
+              <div className="w-11 h-11 rounded-xl bg-foreground flex items-center justify-center shadow-sm">
+                <StudiumLogo size={24} className="text-background" />
               </div>
               <span className="text-xl font-heading font-bold">Studium</span>
             </div>
             <div className="space-y-4">
               <h1 className="font-display text-4xl font-semibold leading-tight text-balance">
-                Learn like a <em className="italic text-primary">scholar</em>, remember like a machine.
+                Learn like a <em className="italic text-accent">scholar</em>, remember like a machine.
               </h1>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Upload your textbooks, chat with AI, and let spaced repetition do the heavy lifting.
@@ -27,20 +27,20 @@ export default function SignInPage() {
 
           <div className="relative space-y-4">
             <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-              <Quote className="w-5 h-5 text-primary" />
+              <Quote className="w-5 h-5 text-accent" />
               <p className="text-sm italic text-foreground leading-relaxed">
                 &ldquo;Turned my study routine from chaotic to streamlined. Aced my exams.&rdquo;
               </p>
               <div className="flex items-center gap-2 text-xs">
-                <div className="w-7 h-7 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold">A</div>
+                <div className="w-7 h-7 rounded-full bg-primary/15 text-accent flex items-center justify-center font-bold">A</div>
                 <span className="font-semibold text-foreground">Alex Rodriguez</span>
                 <span className="text-muted-foreground">· Medical Student</span>
               </div>
             </div>
             <div className="flex items-center gap-4 text-[11px] font-mono text-muted-foreground">
-              <span className="flex items-center gap-1.5"><BookOpen className="w-3.5 h-3.5 text-primary" /> PDF parsing</span>
-              <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5 text-primary" /> AI quizzes</span>
-              <span className="flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-primary" /> Code-verified</span>
+              <span className="flex items-center gap-1.5"><BookOpen className="w-3.5 h-3.5 text-accent" /> PDF parsing</span>
+              <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5 text-accent" /> AI quizzes</span>
+              <span className="flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-accent" /> Code-verified</span>
             </div>
           </div>
         </div>

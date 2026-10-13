@@ -48,3 +48,6 @@ Thumbs.db
 # Prisma generated
 /lib/generated/prisma
 
+# impeccable live session journals (local recovery state, not project source)
+.impeccable/live/sessions/
+

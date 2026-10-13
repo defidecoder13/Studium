@@ -97,7 +97,8 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
       {/* Collapse Toggle Button */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3.5 top-6 w-7 h-7 rounded-full border border-border bg-background shadow-md flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors z-40 hover:scale-105"
+        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        className="absolute -right-4 top-6 w-9 h-9 rounded-full border border-border bg-background shadow-md flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors z-40 hover:scale-105 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
         {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -106,8 +107,8 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
       {/* Header / Brand */}
       <div className={cn('h-16 border-b border-border flex items-center px-4 transition-all', isCollapsed ? 'justify-center' : 'justify-start gap-3 px-6')}>
         <Link href="/app/dashboard" className="flex items-center gap-3 group">
-          <div className="w-9 h-9 rounded-xl bg-black dark:bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105">
-            <StudiumLogo size={20} className="text-white" />
+          <div className="w-9 h-9 rounded-xl bg-foreground flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105">
+            <StudiumLogo size={20} className="text-background" />
           </div>
           {!isCollapsed && (
             <div className="flex flex-col min-w-0 animate-in fade-in duration-200">
@@ -128,17 +129,18 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
 
         {navItems.map((item) => {
           const Icon = item.icon
-          const isActive = pathname.startsWith(item.href) || (item.href === '/app/library' && (pathname.startsWith('/app/documents') || pathname.startsWith('/app/reader')))
+          const isActive = pathname.startsWith(item.href) || (item.href === '/app/library' && pathname.startsWith('/app/reader'))
 
           return (
             <Link
               key={item.href}
               href={item.href}
+              aria-label={item.label}
               title={isCollapsed ? item.label : undefined}
               className={cn(
                 'flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group relative',
                 isActive
-                  ? 'bg-primary/10 text-primary font-semibold'
+                  ? 'bg-primary/10 text-accent font-semibold'
                   : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground'
               )}
             >
@@ -148,7 +150,7 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
               <Icon
                 className={cn(
                   'w-5 h-5 shrink-0 transition-colors',
-                  isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'
+                  isActive ? 'text-accent' : 'text-muted-foreground group-hover:text-foreground'
                 )}
               />
               {!isCollapsed && (
@@ -173,6 +175,7 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
             isCollapsed ? 'justify-center p-2' : 'px-3 py-2.5'
           )}
           title={isCollapsed ? `${user?.name || 'Alex Rodriguez'} (${user?.email || 'alex@studium.ai'})` : undefined}
+          aria-label={`${user?.name || 'Alex Rodriguez'}, ${user?.email || 'alex@studium.ai'}`}
         >
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-xs shrink-0 relative">
             {user?.name?.charAt(0).toUpperCase() || 'A'}
@@ -191,9 +194,10 @@ export function Sidebar({ user }: { user?: { name?: string | null; email?: strin
           onClick={handleLogout}
           variant="ghost"
           size="sm"
+          aria-label="Logout"
           title={isCollapsed ? 'Logout' : undefined}
           className={cn(
-            'w-full justify-start gap-3 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors font-medium h-9',
+            'w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors font-medium h-9',
             isCollapsed ? 'justify-center px-0' : 'px-3.5'
           )}
         >

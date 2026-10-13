@@ -15,6 +15,8 @@ import {
   Video
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { deleteWithUndo } from '@/components/ui/undo-toast'
 
 interface Flashcard {
   id: string
@@ -64,7 +66,7 @@ export default function FlashcardsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedDeckId, setExpandedDeckId] = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deckToDelete, setDeckToDelete] = useState<FlashcardDeck | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -86,43 +88,67 @@ export default function FlashcardsPage() {
     }
   }, [])
 
-  const handleDeleteDeck = async (deckId: string, e: React.MouseEvent) => {
+  const handleDeleteDeck = (deck: FlashcardDeck, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm('Are you sure you want to delete this flashcard deck and all its cards?')) return
-    
-    setDeletingId(deckId)
-    try {
-      await fetch(`/api/flashcards?deckId=${deckId}`, { method: 'DELETE' })
-      setDecks(prev => prev.filter(d => d.id !== deckId))
-      setStats(prev => ({
-        ...prev,
-        totalDecks: Math.max(0, prev.totalDecks - 1),
-        totalCards: Math.max(0, prev.totalCards - (decks.find(d => d.id === deckId)?.cards.length || 0))
-      }))
-    } catch (err) {
-      console.error('Failed to delete deck:', err)
-    } finally {
-      setDeletingId(null)
-    }
+    setDeckToDelete(deck)
   }
 
-  const handleDeleteCard = async (cardId: string, deckId: string) => {
-    try {
-      await fetch(`/api/flashcards?cardId=${cardId}`, { method: 'DELETE' })
-      setDecks(prev => prev.map(d => {
-        if (d.id !== deckId) return d
-        return {
-          ...d,
-          cards: d.cards.filter(c => c.id !== cardId)
-        }
-      }))
-      setStats(prev => ({
-        ...prev,
-        totalCards: Math.max(0, prev.totalCards - 1)
-      }))
-    } catch (err) {
-      console.error('Failed to delete card:', err)
-    }
+  const confirmDeleteDeck = () => {
+    const deck = deckToDelete
+    if (!deck) return
+    setDeckToDelete(null)
+    const cardCount = deck.cards.length
+    const index = decks.findIndex((d) => d.id === deck.id)
+    deleteWithUndo({
+      remove: () => setDecks((prev) => prev.filter((d) => d.id !== deck.id)),
+      restore: () =>
+        setDecks((prev) => {
+          const next = [...prev]
+          next.splice(Math.min(Math.max(index, 0), next.length), 0, deck)
+          return next
+        }),
+      commit: async () => {
+        const res = await fetch(`/api/flashcards?deckId=${deck.id}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Delete failed')
+        setStats((prev) => ({
+          ...prev,
+          totalDecks: Math.max(0, prev.totalDecks - 1),
+          totalCards: Math.max(0, prev.totalCards - cardCount),
+        }))
+      },
+      title: 'Deck deleted',
+      message: `"${deck.name}" and its ${cardCount} card${cardCount === 1 ? '' : 's'} will be removed for good.`,
+    })
+  }
+
+  const handleDeleteCard = (cardId: string, deckId: string) => {
+    const deck = decks.find((d) => d.id === deckId)
+    const cardIndex = deck?.cards.findIndex((c) => c.id === cardId) ?? -1
+    // Single card: no dialog, straight to Undo — low scope, instantly reversible.
+    deleteWithUndo({
+      remove: () =>
+        setDecks((prev) =>
+          prev.map((d) => (d.id !== deckId ? d : { ...d, cards: d.cards.filter((c) => c.id !== cardId) }))
+        ),
+      restore: () =>
+        setDecks((prev) =>
+          prev.map((d) => {
+            if (d.id !== deckId || !deck) return d
+            const card = deck.cards[cardIndex]
+            if (!card) return d
+            const next = [...d.cards]
+            next.splice(Math.min(Math.max(cardIndex, 0), next.length), 0, card)
+            return { ...d, cards: next }
+          })
+        ),
+      commit: async () => {
+        const res = await fetch(`/api/flashcards?cardId=${cardId}`, { method: 'DELETE' })
+        if (!res.ok) throw new Error('Delete failed')
+        setStats((prev) => ({ ...prev, totalCards: Math.max(0, prev.totalCards - 1) }))
+      },
+      title: 'Card removed',
+      message: deck ? `From "${deck.name}". It will be deleted for good.` : undefined,
+    })
   }
 
   const filteredDecks = decks.filter(d => 
@@ -139,9 +165,9 @@ export default function FlashcardsPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <h1 className="text-3xl font-heading font-bold text-foreground tracking-tight">
-              Spaced Repetition Hub
+              Flashcards
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-mono font-bold">
+            <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-accent text-xs font-mono font-bold">
               SM-2 Active Recall
             </span>
           </div>
@@ -152,7 +178,7 @@ export default function FlashcardsPage() {
 
         <div className="flex items-center gap-3 shrink-0">
           <Link href="/app/review">
-            <Button className="h-10 px-5 rounded-xl bg-primary text-primary-foreground font-bold shadow-sm hover:opacity-90 transition flex items-center gap-2">
+            <Button className="h-10 px-5 bg-primary text-primary-foreground font-bold hover:opacity-90 transition flex items-center gap-2">
               <Sparkles className="w-4 h-4" />
               <span>Start Daily Review ({stats.dueCardsCount} Due)</span>
             </Button>
@@ -162,8 +188,8 @@ export default function FlashcardsPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-accent/10 text-accent flex items-center justify-center shrink-0">
+        <div className="p-5 rounded-xl border border-border bg-card flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-accent/10 text-accent flex items-center justify-center shrink-0">
             <Layers className="w-6 h-6" />
           </div>
           <div>
@@ -172,8 +198,8 @@ export default function FlashcardsPage() {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+        <div className="p-5 rounded-xl border border-border bg-card flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-primary/10 text-accent flex items-center justify-center shrink-0">
             <FileText className="w-6 h-6" />
           </div>
           <div>
@@ -182,13 +208,13 @@ export default function FlashcardsPage() {
           </div>
         </div>
 
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0">
+        <div className="p-5 rounded-xl border border-border bg-card flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0">
             <Clock className="w-6 h-6" />
           </div>
           <div>
             <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Due For Review</div>
-            <div className="text-2xl font-heading font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+            <div className="text-2xl font-heading font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
               {stats.dueCardsCount} <span className="text-xs font-normal text-muted-foreground font-sans">cards</span>
             </div>
           </div>
@@ -202,9 +228,10 @@ export default function FlashcardsPage() {
           <input
             type="text"
             placeholder="Search decks or terms..."
+            aria-label="Search decks or terms"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-10 pr-4 rounded-xl bg-card border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 transition placeholder:text-muted-foreground"
+            className="w-full h-10 pl-10 pr-4 rounded-lg bg-card border border-border text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 transition placeholder:text-muted-foreground"
           />
         </div>
       </div>
@@ -213,7 +240,7 @@ export default function FlashcardsPage() {
       {isLoading && decks.length === 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
           {[1, 2, 3].map(i => (
-            <div key={i} className="rounded-2xl border border-border bg-card p-6 space-y-4 shadow-sm">
+            <div key={i} className="rounded-xl border border-border bg-card p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="w-32 h-4 rounded bg-muted" />
                 <div className="w-16 h-4 rounded bg-muted" />
@@ -227,8 +254,8 @@ export default function FlashcardsPage() {
           ))}
         </div>
       ) : filteredDecks.length === 0 ? (
-        <div className="p-12 md:p-16 rounded-3xl border border-dashed border-border bg-card/50 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+        <div className="p-12 md:p-16 rounded-xl border border-dashed border-border bg-card/50 flex flex-col items-center justify-center text-center space-y-4">
+          <div className="w-16 h-16 rounded-xl bg-primary/10 text-accent flex items-center justify-center">
             <Sparkles className="w-8 h-8" />
           </div>
           <div className="space-y-1 max-w-md">
@@ -238,7 +265,7 @@ export default function FlashcardsPage() {
             </p>
           </div>
           <Link href="/app/library">
-            <Button className="mt-2 h-10 px-6 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-sm">
+            <Button className="mt-2 h-10 px-6 bg-primary text-primary-foreground font-bold text-xs">
               Explore Library
             </Button>
           </Link>
@@ -253,23 +280,21 @@ export default function FlashcardsPage() {
               return (
                 <div 
                   key={deck.id}
-                  className="rounded-2xl border border-border bg-card hover:border-primary/40 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 shadow-sm flex flex-col justify-between overflow-hidden group"
+                  className="rounded-xl border border-border bg-card hover:border-primary/40 transition-colors duration-200 flex flex-col justify-between overflow-hidden group"
                 >
-                  {/* Accent spine */}
-                  <div className="h-1 bg-primary/40" />
                   <div className="p-6 space-y-4">
                     
                     {/* Badge & Trash */}
                     <div className="flex items-center justify-between gap-2">
                       <span className="px-2.5 py-1 rounded-md bg-muted text-muted-foreground text-[10px] font-mono font-bold flex items-center gap-1.5 truncate">
-                        {isVideo ? <Video className="w-3 h-3 text-destructive shrink-0" /> : <BookOpen className="w-3 h-3 text-primary shrink-0" />}
+                        {isVideo ? <Video className="w-3 h-3 text-destructive shrink-0" /> : <BookOpen className="w-3 h-3 text-accent shrink-0" />}
                         <span className="truncate">{deck.document?.title || 'Study Material'}</span>
                       </span>
                       <button
-                        onClick={e => handleDeleteDeck(deck.id, e)}
-                        disabled={deletingId === deck.id}
-                        className="w-7 h-7 rounded-lg hover:bg-destructive/10 hover:text-destructive text-muted-foreground flex items-center justify-center transition shrink-0"
+                        onClick={e => handleDeleteDeck(deck, e)}
+                        className="min-h-10 min-w-10 rounded-lg hover:bg-destructive/10 hover:text-destructive text-muted-foreground flex items-center justify-center transition shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         title="Delete deck"
+                        aria-label={`Delete deck ${deck.name}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -277,13 +302,13 @@ export default function FlashcardsPage() {
 
                     {/* Title */}
                     <div className="space-y-1">
-                      <h3 className="font-heading font-bold text-base text-foreground leading-snug group-hover:text-primary transition-colors">
+                      <h3 className="font-heading font-bold text-base text-foreground leading-snug group-hover:text-accent transition-colors">
                         {deck.name}
                       </h3>
                       <div className="text-xs text-muted-foreground font-mono flex items-center gap-2">
                         <span>{deck.cards.length} Cards</span>
                         <span>•</span>
-                        <span className={dueCount > 0 ? "text-emerald-600 dark:text-emerald-400 font-bold" : ""}>
+                        <span className={dueCount > 0 ? "text-emerald-700 dark:text-emerald-400 font-bold" : ""}>
                           {dueCount} Due Today
                         </span>
                       </div>
@@ -323,8 +348,9 @@ export default function FlashcardsPage() {
                               </span>
                               <button
                                 onClick={() => handleDeleteCard(card.id, deck.id)}
-                                className="text-muted-foreground hover:text-destructive transition p-0.5 shrink-0"
+                                className="text-muted-foreground hover:text-destructive transition min-h-10 min-w-10 rounded-lg flex items-center justify-center shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 title="Delete card"
+                                aria-label="Delete card"
                               >
                                 <Trash2 className="w-3 h-3" />
                               </button>
@@ -350,6 +376,29 @@ export default function FlashcardsPage() {
           </div>
         </div>
       )}
+
+      {/* Delete-deck confirmation with scope summary + Undo window */}
+      <ConfirmDialog
+        open={deckToDelete !== null}
+        title="Delete this deck?"
+        body={
+          deckToDelete && (
+            <span>
+              <strong className="text-foreground">{deckToDelete.name}</strong>
+              <span className="font-mono text-[11px]">
+                {' '}
+                · {deckToDelete.cards.length} card{deckToDelete.cards.length === 1 ? '' : 's'} ·{' '}
+                {deckToDelete.document?.title || 'Study Material'}
+              </span>
+              <br />
+              The deck and every card in it go with it. This can&apos;t be undone after the Undo window closes.
+            </span>
+          )
+        }
+        confirmLabel="Delete deck"
+        onConfirm={confirmDeleteDeck}
+        onClose={() => setDeckToDelete(null)}
+      />
 
     </div>
   )

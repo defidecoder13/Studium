@@ -75,7 +75,7 @@ function DailyReviewContent() {
   if (currentIndex >= cards.length) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-6 text-center animate-in zoom-in-95 duration-500">
-        <div className="w-20 h-20 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center">
+        <div className="w-20 h-20 bg-emerald-500/10 text-emerald-500 rounded-xl flex items-center justify-center">
           <CheckCircle2 className="w-10 h-10" />
         </div>
         <div className="space-y-2 max-w-md">
@@ -84,7 +84,7 @@ function DailyReviewContent() {
             You&apos;ve reviewed all your due flashcards for today. The SuperMemo-2 algorithm will schedule your next reviews to maximize long-term retention.
           </p>
         </div>
-        <Button onClick={() => router.push('/app/dashboard')} className="h-12 px-8 rounded-xl font-bold bg-primary text-primary-foreground">
+        <Button onClick={() => router.push('/app/dashboard')} className="h-12 px-8 font-bold bg-primary text-primary-foreground">
           Return to Dashboard
         </Button>
       </div>
@@ -129,13 +129,13 @@ function DailyReviewContent() {
             onClick={() => !isFlipped && setIsFlipped(true)}
           >
             <div 
-              className="relative w-full h-full transition-all duration-500 shadow-xl rounded-3xl"
+              className="relative w-full h-full transition-transform duration-500 rounded-xl"
               style={{ transformStyle: 'preserve-3d', transform: isFlipped ? 'rotateX(180deg)' : 'rotateX(0deg)' }}
             >
               
               {/* FRONT */}
               <div 
-                className="absolute inset-0 bg-background border border-border rounded-3xl p-8 sm:p-12 flex flex-col justify-center items-center text-center overflow-hidden"
+                className="absolute inset-0 bg-background border border-border rounded-xl p-8 sm:p-12 flex flex-col justify-center items-center text-center overflow-hidden"
                 style={{ backfaceVisibility: 'hidden' }}
               >
                 <span className="absolute top-6 left-6 text-xs font-mono text-accent/80 uppercase tracking-widest">
@@ -153,7 +153,7 @@ function DailyReviewContent() {
 
               {/* BACK */}
               <div 
-                className="absolute inset-0 bg-secondary/40 border border-border rounded-3xl p-8 sm:p-12 flex flex-col justify-center items-center text-center overflow-hidden"
+                className="absolute inset-0 bg-secondary/40 border border-border rounded-xl p-8 sm:p-12 flex flex-col justify-center items-center text-center overflow-hidden"
                 style={{ backfaceVisibility: 'hidden', transform: 'rotateX(180deg)' }}
               >
                 <span className="absolute top-6 left-6 text-xs font-mono text-muted-foreground uppercase tracking-widest">
@@ -175,11 +175,15 @@ function DailyReviewContent() {
 
           {/* Controls */}
           <div className={`w-full flex items-center justify-center transition-all duration-300 ${isFlipped ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-xl">
+            <div className="flex flex-col items-center gap-3 w-full max-w-xl">
+              <p className="text-[11px] text-muted-foreground text-center max-w-md leading-relaxed">
+                Rate how hard recall felt — not whether you got it right. An honest ‘Again’ builds memory faster.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full">
               <Button 
                 onClick={() => handleRate('again')} 
                 disabled={isSubmitting}
-                className="h-14 bg-muted hover:bg-muted/70 text-foreground font-bold rounded-2xl border-b-4 border-foreground/20 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
+                className="h-14 bg-muted hover:bg-muted/70 text-foreground font-bold rounded-xl border-b-4 border-foreground/20 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
               >
                 <span>Again</span>
                 <span className="text-[10px] opacity-70 font-mono font-normal">&lt;10m</span>
@@ -187,7 +191,7 @@ function DailyReviewContent() {
               <Button 
                 onClick={() => handleRate('hard')} 
                 disabled={isSubmitting}
-                className="h-14 bg-destructive/10 hover:bg-destructive/15 text-destructive font-bold rounded-2xl border-b-4 border-destructive/40 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
+                className="h-14 bg-destructive/10 hover:bg-destructive/15 text-destructive font-bold rounded-xl border-b-4 border-destructive/40 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
               >
                 <span>Hard</span>
                 <span className="text-[10px] opacity-70 font-mono font-normal">1d</span>
@@ -195,7 +199,7 @@ function DailyReviewContent() {
               <Button 
                 onClick={() => handleRate('medium')} 
                 disabled={isSubmitting}
-                className="h-14 bg-primary/10 hover:bg-primary/15 text-primary font-bold rounded-2xl border-b-4 border-primary/40 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
+                className="h-14 bg-primary/10 hover:bg-primary/15 text-accent font-bold rounded-xl border-b-4 border-primary/40 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
               >
                 <span>Good</span>
                 <span className="text-[10px] opacity-70 font-mono font-normal">~3d</span>
@@ -203,11 +207,12 @@ function DailyReviewContent() {
               <Button 
                 onClick={() => handleRate('easy')} 
                 disabled={isSubmitting}
-                className="h-14 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold rounded-2xl border-b-4 border-emerald-500/40 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
+                className="h-14 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 font-bold rounded-xl border-b-4 border-emerald-500/40 active:border-b-0 active:translate-y-1 transition-all flex flex-col items-center justify-center gap-0.5"
               >
                 <span>Easy</span>
                 <span className="text-[10px] opacity-70 font-mono font-normal">~4d+</span>
               </Button>
+              </div>
             </div>
           </div>
 

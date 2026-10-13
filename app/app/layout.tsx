@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
 import { Sidebar } from '@/components/app/sidebar'
+import { UndoToastHost } from '@/components/ui/undo-toast'
 
 export default async function AppLayout({
   children,
@@ -23,6 +24,7 @@ export default async function AppLayout({
         <main className="flex-1 overflow-y-auto min-w-0">
           {children}
         </main>
+        <UndoToastHost />
       </div>
     </div>
   )

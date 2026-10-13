@@ -6,11 +6,11 @@ import { ChevronDown } from 'lucide-react'
 const FAQS = [
   {
     question: 'How does the AI understand my documents?',
-    answer: 'Our system uses advanced language models to analyze document structure and extract key concepts, generating accurate summaries and study materials.',
+    answer: 'Uploads are split into ~800-word chunks, indexed for hybrid keyword and vector search, and every chunk keeps its page number. Answers cite the exact page — tap any citation to open it.',
   },
   {
     question: 'Can I use this for any subject?',
-    answer: 'Yes. Studium works across all domains—from literature to mathematics to sciences. The AI adapts to different types of content.',
+    answer: 'If it has pages, yes — pathology textbooks, case briefs, problem sets, primary sources. YouTube lectures work too: transcripts become 3-minute pages you can chat with, quiz, and make cards from.',
   },
   {
     question: 'Is my data secure?',
@@ -18,7 +18,11 @@ const FAQS = [
   },
   {
     question: 'Can I export my study materials?',
-    answer: 'Yes. Export flashcards, summaries, and notes in multiple formats including PDF, Markdown, and popular flashcard apps.',
+    answer: 'Your notes export to Markdown from any open document, in one click. Anki, Quizlet, and PDF export are not available yet.',
+  },
+  {
+    question: 'What does free include?',
+    answer: 'Everything, with no credit card and no trial clock. The only limits are technical: 4.5 MB and 50 pages per upload — split larger PDFs and upload them in parts.',
   },
 ]
 

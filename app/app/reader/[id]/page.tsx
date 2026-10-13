@@ -11,9 +11,9 @@ const DocumentReader = dynamic(
     ssr: false,
     loading: () => (
       <div className="fixed inset-0 z-50 bg-background flex flex-col items-center justify-center gap-4 animate-in fade-in duration-200">
-        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin shadow-lg" />
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         <div className="text-base font-heading font-bold text-foreground">Loading Document Workspace...</div>
-        <div className="text-xs text-muted-foreground font-mono">Fetching document, AI chat, and active recall engine...</div>
+        <div className="text-xs text-muted-foreground font-mono">Opening your document…</div>
       </div>
     ),
   }
